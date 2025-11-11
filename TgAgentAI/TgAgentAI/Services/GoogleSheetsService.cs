@@ -26,7 +26,7 @@ namespace TgAgentAI.Services
             var values = items.Select(i => new object[] { i.Date, i.Rubric, i.Title, i.Description }).ToList();
             var body = new ValueRange { Values = values.Cast<IList<object>>().ToList() };
             await _sheets.Spreadsheets.Values.Append(body, _spreadsheetId, "Plan!A:D")
-                .SetValueInputOption("RAW").ExecuteAsync();
+                .ValueInputOption("RAW").ExecuteAsync();
         }
     }
 }

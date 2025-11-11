@@ -1,10 +1,5 @@
 ﻿using GenerativeAI.Types;
 using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using TgAgentAI.Models;
 
 namespace TgAgentAI.Services
@@ -48,14 +43,14 @@ namespace TgAgentAI.Services
                 Рубрика: {rubric}
                 Фото с объекта. Сгенерируй 3 варианта поста.
                 Стиль: честно, профессионально, без воды. Цифры, факты.
-                JSON: [{"title":"...", "body":"...", "hashtags":"..."}]
+                JSON: ["title":"...", "body":"...", "hashtags":"..."]
                 """ }
         };
             if (imagePart != null) parts.Insert(0, imagePart);
 
             var response = await model.GenerateContentAsync(new GenerateContentRequest
             {
-                Contents = [new() { Role = "user", Parts = parts.ToArray() }]
+                Contents = [new() { Role = "user", Parts = parts }]
             });
 
             var json = response.Candidates.First().Content.Parts.First().Text;

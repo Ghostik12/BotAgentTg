@@ -20,12 +20,14 @@ namespace TgAgentAI.Services
             var page = new PagesCreateParameters
             {
                 Parent = new DatabaseParentInput { DatabaseId = _dbId },
-                Properties = new Dictionary<string, PropertyValue>
+                Properties = new Dictionary<string, PropertyValue> 
                 {
-                    ["Дата"] = new DatePropertyValue { Date = new Date { Start = record.PublishedAt } },
-                    ["Рубрика"] = new SelectPropertyValue { Select = new SelectOption { Name = record.Rubric } },
-                    ["Название"] = new TitlePropertyValue { Title = new List<RichTextBase> { new RichTextBase { PlainTextT = new Text { Content = record.Title } } } },
-                    ["Статус"] = new SelectPropertyValue { Select = new SelectOption { Name = record.Status } }
+                    {
+                        //"Дата", new DatePropertyValue { Date = new Date { Start = record.PublishedAt } },
+                        //"Рубрика", new SelectPropertyValue { Select = new SelectOption { Name = record.Rubric } },
+                        "Название", new TitlePropertyValue { Title = new List<RichTextBase>{ new RichTextText { Text = new() { Content = record.Title } } } }
+                        //"Статус", new SelectPropertyValue { Select = new SelectOption { Name = record.Status } }
+                    }
                 }
             };
             await _client.Pages.CreateAsync(page);
