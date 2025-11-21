@@ -1,4 +1,5 @@
-﻿using Google.Apis.Auth.OAuth2;
+﻿using GenerativeAI;
+using Google.Apis.Auth.OAuth2;
 using Google.Apis.Sheets.v4;
 using Hangfire;
 using Microsoft.Extensions.Configuration;
@@ -17,8 +18,12 @@ namespace TgAgentAI.Infrastructure
                 new TelegramBotClient(config["Telegram:BotToken"]!));
 
             // Gemini
-            services.AddSingleton<GenerativeAI>(sp =>
-                new GenerativeAI(config["Gemini:ApiKey"]!));
+            services.AddSingleton<GenerativeModel>(sp =>
+            {
+                var apiKey = config["Gemini:ApiKey"]!;
+                var modelName = "gemini-1.5-flash"; // Бесплатная модель
+                return new GenerativeModel(apiKey, modelName);
+            });
 
             // Google Sheets
             services.AddSingleton<SheetsService>(sp =>
@@ -34,7 +39,11 @@ namespace TgAgentAI.Infrastructure
                 NotionClientFactory.Create(new ClientOptions { AuthToken = config["Notion:Token"] }));
 
             // Hangfire (in-memory for demo)
-            services.AddHangfire(x => x.UseInMemoryStorage());
+            services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings());
+
             services.AddHangfireServer();
 
             return services;
