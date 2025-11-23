@@ -18,7 +18,7 @@ namespace BotParser.Parsers
             string? AllowedBudget,
             string? Description,
             long ProjectId,
-            bool AlreadyViewed,
+            //bool AlreadyViewed,
             DateTime ParsedAt);
 
         public async Task<List<KworkOrder>> GetNewOrdersAsync(int? categoryId = null)
@@ -73,12 +73,12 @@ namespace BotParser.Parsers
                     }
 
                     // Просмотрено? (проверяем стиль и текст)
-                    var viewedBlock = card.SelectSingleNode(".//div[contains(@class, 'want-card__mark-viewed')]");
-                    var alreadyViewed = viewedBlock != null &&
-                                        !viewedBlock.GetAttributeValue("style", "").Contains("display: none") &&
-                                        viewedBlock.InnerText.Contains("ПРОСМОТРЕНО");
+                    //var viewedBlock = card.SelectSingleNode(".//div[contains(@class, 'want-card__mark-viewed')]");
+                    //var alreadyViewed = viewedBlock != null &&
+                    //                    !viewedBlock.GetAttributeValue("style", "").Contains("display: none") &&
+                    //                    viewedBlock.InnerText.Contains("ПРОСМОТРЕНО");
 
-                    if (alreadyViewed) continue;
+                    //if (alreadyViewed) continue;
 
                     // Описание (только видимая часть)
                     var descNode = card.SelectSingleNode(".//div[contains(@class, 'wants-card__description-text')]//div[contains(@class, 'overflow-hidden')]//div[contains(@class, 'breakwords')]");
@@ -101,7 +101,7 @@ namespace BotParser.Parsers
                         AllowedBudget: allowedBudget,
                         Description: description,
                         ProjectId: projectId,
-                        AlreadyViewed: alreadyViewed,
+                        //AlreadyViewed: alreadyViewed,
                         ParsedAt: DateTime.UtcNow
                     ));
                 }

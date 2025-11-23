@@ -13,6 +13,5 @@ namespace BotParser.Models
         public List<KworkCategory> SelectedCategories { get; set; } = new();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public string? CurrentStep { get; set; }
-        public string NotificationInterval { get; set; } = "off";
     }
 }

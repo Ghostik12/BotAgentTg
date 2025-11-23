@@ -23,18 +23,20 @@ namespace BotParser
 
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>
-                options.UseSqlite("Data Source=kworkbot.db"));
+                options.UseSqlite("Data Source=kworkbot2.db"));
 
             // Сервисы
-            builder.Services.AddScoped<KworkService>();
+            builder.Services.AddScoped<FreelanceService>();
             builder.Services.AddScoped<KworkParser>();
+            builder.Services.AddHostedService<CategoryCheckerService>();
+            builder.Services.AddScoped<FlParser>();
 
             var app = builder.Build();
 
             using (var scope = app.Services.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
-                db.Database.EnsureDeleted();   // удаляем старый кривой файл (один раз)
+                //db.Database.EnsureDeleted();   // удаляем старый кривой файл (один раз)
                 db.Database.EnsureCreated();
             }
 

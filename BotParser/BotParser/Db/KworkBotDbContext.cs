@@ -10,6 +10,8 @@ namespace BotParser.Db
         public DbSet<User> Users => Set<User>();
         public DbSet<KworkCategory> KworkCategories => Set<KworkCategory>();
         public DbSet<SentOrder> SentOrders => Set<SentOrder>();
+        public DbSet<FlCategory> FlCategories => Set<FlCategory>();
+        public DbSet<SentFlOrder> SentFlOrders => Set<SentFlOrder>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -20,6 +22,27 @@ namespace BotParser.Db
                 .HasOne(c => c.User)
                 .WithMany(u => u.SelectedCategories)
                 .HasForeignKey(c => c.UserId);
+
+            modelBuilder.Entity<KworkCategory>()
+                .HasIndex(c => new { c.UserId, c.CategoryId })
+                .IsUnique();
+
+            modelBuilder.Entity<SentOrder>()
+                .HasIndex(s => new { s.UserTelegramId, s.ProjectId })
+                .IsUnique();
+
+            modelBuilder.Entity<FlCategory>()
+                .HasOne(c => c.User)
+                .WithMany() // Нет коллекции в User — просто связь
+                .HasForeignKey(c => c.UserId);
+
+            modelBuilder.Entity<FlCategory>()
+                .HasIndex(c => new { c.UserId, c.CategoryId })
+                .IsUnique();
+
+            modelBuilder.Entity<SentFlOrder>()
+                .HasIndex(s => new { s.UserTelegramId, s.ProjectId })
+                .IsUnique();
 
             base.OnModelCreating(modelBuilder);
         }
