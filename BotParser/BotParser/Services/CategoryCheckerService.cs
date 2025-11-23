@@ -1,5 +1,6 @@
 ﻿using BotParser.Db;
 using BotParser.Models;
+using BotParser.Parsers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,11 +15,13 @@ namespace BotParser.Services
         private readonly IServiceProvider _sp;
         private readonly ILogger<CategoryCheckerService> _log;
         private readonly Dictionary<string, DateTime> _lastCheckTimes = new();
+        private readonly FreelanceService _freelance;
 
-        public CategoryCheckerService(IServiceProvider sp, ILogger<CategoryCheckerService> log)
+        public CategoryCheckerService(IServiceProvider sp, ILogger<CategoryCheckerService> log, FreelanceService freelance)
         {
             _sp = sp;
             _log = log;
+            _freelance = freelance;
         }
 
         protected override async Task ExecuteAsync(CancellationToken ct)
@@ -31,6 +34,7 @@ namespace BotParser.Services
                 {
                     await CheckKworkSubscriptions(ct);
                     await CheckFlSubscriptions(ct);
+                    await CheckYoudoSubscriptions(ct);
                 }
                 catch (Exception ex)
                 {
@@ -38,6 +42,52 @@ namespace BotParser.Services
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(22), ct);
+            }
+        }
+
+        private async Task CheckYoudoSubscriptions(CancellationToken ct)
+        {
+            using var scope = _sp.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
+            var parser = scope.ServiceProvider.GetRequiredService<YoudoParser>();
+
+            var subs = await db.YoudoCategories
+                .Where(c => c.NotificationInterval != "off")
+                .ToListAsync(ct);
+
+            foreach (var sub in subs)
+            {
+                var key = $"youdo_{sub.UserId}_{sub.CategoryId}";
+                var minutes = IntervalToMinutes(sub.NotificationInterval);
+                if (minutes <= 0) continue;
+
+                var last = _lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue);
+                if ((DateTime.UtcNow - last).TotalMinutes < minutes) continue;
+
+                try
+                {
+                    var orders = await parser.GetNewOrdersAsync(sub.CategoryId == 0 ? null : sub.CategoryId);
+                    var sentIds = await db.SentYoudoOrders
+                        .Where(s => s.UserTelegramId == sub.UserId)
+                        .Select(s => s.TaskId)
+                        .ToHashSetAsync(ct);
+
+                    var newOrders = orders.Where(o => !sentIds.Contains(o.TaskId)).ToList();
+
+                    foreach (var order in newOrders)
+                    {
+                        await _freelance.SendYoudoOrderAsync(sub.UserId, order); // Добавь метод в FreelanceService
+                        db.SentYoudoOrders.Add(new SentYoudoOrder { TaskId = order.TaskId, UserTelegramId = sub.UserId });
+                        await Task.Delay(1100, ct);
+                    }
+
+                    if (newOrders.Any()) await db.SaveChangesAsync(ct);
+                    _lastCheckTimes[key] = DateTime.UtcNow;
+                }
+                catch (Exception ex)
+                {
+                    // Лог
+                }
             }
         }
 

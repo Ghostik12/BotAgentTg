@@ -12,6 +12,8 @@ namespace BotParser.Db
         public DbSet<SentOrder> SentOrders => Set<SentOrder>();
         public DbSet<FlCategory> FlCategories => Set<FlCategory>();
         public DbSet<SentFlOrder> SentFlOrders => Set<SentFlOrder>();
+        public DbSet<YoudoCategory> YoudoCategories => Set<YoudoCategory>();
+        public DbSet<SentYoudoOrder> SentYoudoOrders => Set<SentYoudoOrder>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -42,6 +44,19 @@ namespace BotParser.Db
 
             modelBuilder.Entity<SentFlOrder>()
                 .HasIndex(s => new { s.UserTelegramId, s.ProjectId })
+                .IsUnique();
+
+            modelBuilder.Entity<YoudoCategory>()
+                .HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId);
+
+            modelBuilder.Entity<YoudoCategory>()
+                .HasIndex(c => new { c.UserId, c.CategoryId })
+                .IsUnique();
+
+            modelBuilder.Entity<SentYoudoOrder>()
+                .HasIndex(s => new { s.UserTelegramId, s.TaskId })
                 .IsUnique();
 
             base.OnModelCreating(modelBuilder);

@@ -89,14 +89,14 @@ namespace BotParser
                             UserId = userId,
                             CategoryId = catId,
                             Name = catName,
-                            NotificationInterval = "instant" // сразу включаем на максимум
+                            NotificationInterval = "off" // сразу выключаем
                         });
                         await _db.SaveChangesAsync();
 
-                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! Настрой интервал →");
+                        await _bot.AnswerCallbackQuery(cb.Id, "ППодписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
 
                         // ←←←← СРАЗУ ПРОВАЛИВАЕМСЯ В ВЫБОР ИНТЕРВАЛА
-                        await _freelance.ShowIntervalSelection(chatId, userId, catId, isKwork: true, msgId);
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "kwork", msgId);
                     }
                 }
 
@@ -121,40 +121,75 @@ namespace BotParser
                             UserId = userId,
                             CategoryId = catId,
                             Name = catName,
-                            NotificationInterval = "instant"
+                            NotificationInterval = "off" //сразу выключаем
                         });
                         await _db.SaveChangesAsync();
 
-                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! Настрой интервал →");
-                        await _freelance.ShowIntervalSelection(chatId, userId, catId, isKwork: false, msgId);
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fl", msgId);
                     }
                 }
 
                 else if (data.StartsWith("edit_interval_kwork_"))
                 {
                     var catId = int.Parse(data["edit_interval_kwork_".Length..]);
-                    await _freelance.ShowIntervalSelection(chatId, userId, catId, isKwork: true, msgId);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform:"kwork", msgId);
                 }
 
                 else if (data.StartsWith("edit_interval_fl_"))
                 {
                     var catId = int.Parse(data["edit_interval_fl_".Length..]);
-                    await _freelance.ShowIntervalSelection(chatId, userId, catId, isKwork: false, msgId);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fl", msgId);
                 }
 
-                else if (data.StartsWith("kwork_setint_") || data.StartsWith("fl_setint_"))
+                else if (data.StartsWith("edit_interval_youdo_"))
+                {
+                    var catId = int.Parse(data["edit_interval_youdo_".Length..]);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "youdo", msgId);
+                }
+
+                else if (data.Contains("_setint_"))
                 {
                     var parts = data.Split('_');
-                    var isKwork = parts[0] == "kwork";
+                    var platform = parts[0]; // kwork / fl / youdo
                     var catId = int.Parse(parts[2]);
                     var interval = parts[3];
 
-                    await _freelance.SetNotificationInterval(userId, catId, interval, isKwork);
-
+                    await _freelance.SetNotificationInterval(userId, catId, interval, platform);
                     await _bot.AnswerCallbackQuery(cb.Id, $"Интервал: {GetPrettyInterval(interval)}");
+                    await _freelance.ShowMainMenu(chatId);
+                }
 
-                    // Возвращаемся в "Мои подписки"
-                    await _freelance.ShowMySubscriptions(chatId, userId, msgId);
+                else if (data == "youdo_menu")
+                    await _freelance.ShowYoudoMenu(chatId, userId, msgId);
+
+                else if (data.StartsWith("youdo_cat_"))
+                {
+                    var catId = int.Parse(data["youdo_cat_".Length..]);
+                    var catName = FreelanceService.YoudoCategories.GetValueOrDefault(catId, "Неизвестная");
+                    var existing = await _db.YoudoCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId);
+
+                    if (existing != null)
+                    {
+                        _db.YoudoCategories.Remove(existing);
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
+                    }
+                    else
+                    {
+                        _db.YoudoCategories.Add(new YoudoCategory
+                        {
+                            UserId = userId,
+                            CategoryId = catId,
+                            Name = catName,
+                            NotificationInterval = "off"  // Дефолт off — без авто-instant
+                        });
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                    }
+
+                    // ← Только обновляем меню YouDo, без прыжка в интервалы
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "youdo", msgId);
                 }
             }
             catch (Exception ex)
@@ -175,9 +210,9 @@ namespace BotParser
         };
 
         private Task HandleError(ITelegramBotClient bot, Exception ex, CancellationToken ct)
-    {
+        {
         Console.WriteLine($"Ошибка бота: {ex}");
         return Task.CompletedTask;
+        }
     }
-}
 }
