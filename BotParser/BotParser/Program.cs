@@ -19,7 +19,7 @@ namespace BotParser
             builder.Services.AddHostedService<BotService>();
             builder.Services.AddHttpClient("kwork");
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-                new TelegramBotClient("7972227901:AAH_tAaKBEmnTHTrvRE1Kh5SWUucf4S5lqE"));
+                new TelegramBotClient("7972227901:AAH_tAaKBEmnTHTrvRE1Kh5Sf4S5lqE"));
 
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>
