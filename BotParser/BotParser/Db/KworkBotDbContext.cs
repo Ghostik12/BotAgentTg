@@ -14,52 +14,86 @@ namespace BotParser.Db
         public DbSet<SentFlOrder> SentFlOrders => Set<SentFlOrder>();
         public DbSet<YoudoCategory> YoudoCategories => Set<YoudoCategory>();
         public DbSet<SentYoudoOrder> SentYoudoOrders => Set<SentYoudoOrder>();
+        public DbSet<FrCategory> FrCategories => Set<FrCategory>();
+        public DbSet<SentFrOrder> SentFrOrders => Set<SentFrOrder>();
+        public DbSet<SentWsOrder> SentWsOrders => Set<SentWsOrder>();
+        public DbSet<WorkspaceCategory> WorkspaceCategories => Set<WorkspaceCategory>();
+        public DbSet<UserKeywordFilter> UserKeywordFilters => Set<UserKeywordFilter>();
+        public DbSet<AllParsedOrder> AllParsedOrders => Set<AllParsedOrder>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<User>()
-                .HasKey(u => u.Id);
+            // === User ===
+            modelBuilder.Entity<User>(e =>
+            {
+                e.HasKey(u => u.Id);
+                e.Property(u => u.Username).HasMaxLength(100);
+            });
 
-            modelBuilder.Entity<KworkCategory>()
-                .HasOne(c => c.User)
-                .WithMany(u => u.SelectedCategories)
-                .HasForeignKey(c => c.UserId);
+            // === KworkCategory ===
+            modelBuilder.Entity<KworkCategory>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.HasIndex(x => new { x.UserId, x.CategoryId }).IsUnique();
+                e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
 
-            modelBuilder.Entity<KworkCategory>()
-                .HasIndex(c => new { c.UserId, c.CategoryId })
-                .IsUnique();
+            // === FlCategory ===
+            modelBuilder.Entity<FlCategory>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.HasIndex(x => new { x.UserId, x.CategoryId }).IsUnique();
+                e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
 
-            modelBuilder.Entity<SentOrder>()
-                .HasIndex(s => new { s.UserTelegramId, s.ProjectId })
-                .IsUnique();
+            // === YoudoCategory ===
+            modelBuilder.Entity<YoudoCategory>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.HasIndex(x => new { x.UserId, x.CategoryId }).IsUnique();
+                e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
 
-            modelBuilder.Entity<FlCategory>()
-                .HasOne(c => c.User)
-                .WithMany() // Нет коллекции в User — просто связь
-                .HasForeignKey(c => c.UserId);
+            // === FrCategory — САМОЕ ГЛАВНОЕ ===
+            modelBuilder.Entity<FrCategory>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.HasIndex(x => new { x.UserId, x.CategoryId }).IsUnique();
+                e.Property(x => x.Name).HasMaxLength(200);
+                e.Property(x => x.NotificationInterval).HasMaxLength(20).HasDefaultValue("off");
+                e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
 
-            modelBuilder.Entity<FlCategory>()
-                .HasIndex(c => new { c.UserId, c.CategoryId })
-                .IsUnique();
+            // === Sent-таблицы ===
+            modelBuilder.Entity<SentOrder>(e => e.HasIndex(x => new { x.UserTelegramId, x.ProjectId }).IsUnique());
+            modelBuilder.Entity<SentFlOrder>(e => e.HasIndex(x => new { x.UserTelegramId, x.ProjectId }).IsUnique());
+            modelBuilder.Entity<SentYoudoOrder>(e => e.HasIndex(x => new { x.UserTelegramId, x.TaskId }).IsUnique());
+            modelBuilder.Entity<SentFrOrder>(e => e.HasIndex(x => new { x.UserTelegramId, x.ProjectId }).IsUnique());
+            modelBuilder.Entity<SentWsOrder>(e => e.HasIndex(x => new { x.UserTelegramId, x.TenderId }).IsUnique());
 
-            modelBuilder.Entity<SentFlOrder>()
-                .HasIndex(s => new { s.UserTelegramId, s.ProjectId })
-                .IsUnique();
+            modelBuilder.Entity<WorkspaceCategory>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.HasIndex(x => new { x.UserId, x.CategorySlug }).IsUnique();
+                e.Property(x => x.Name).HasMaxLength(200);
+                e.Property(x => x.NotificationInterval).HasMaxLength(20).HasDefaultValue("off");
+                e.Property(x => x.CategorySlug).HasMaxLength(100);
+                e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
 
-            modelBuilder.Entity<YoudoCategory>()
-                .HasOne(c => c.User)
-                .WithMany()
-                .HasForeignKey(c => c.UserId);
+            modelBuilder.Entity<UserKeywordFilter>(e =>
+            {
+                e.HasIndex(x => x.UserId);
+                e.Property(x => x.Keyword).HasMaxLength(100);
+            });
 
-            modelBuilder.Entity<YoudoCategory>()
-                .HasIndex(c => new { c.UserId, c.CategoryId })
-                .IsUnique();
-
-            modelBuilder.Entity<SentYoudoOrder>()
-                .HasIndex(s => new { s.UserTelegramId, s.TaskId })
-                .IsUnique();
-
-            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<AllParsedOrder>(e =>
+            {
+                e.HasIndex(x => new { x.Platform, x.ExternalId }).IsUnique();
+                e.HasIndex(x => x.SavedAt);
+                e.Property(x => x.Platform).HasMaxLength(20);
+                e.Property(x => x.Title).HasMaxLength(500);
+            });
         }
     }
 }

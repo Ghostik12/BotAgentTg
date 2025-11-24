@@ -83,12 +83,79 @@ namespace BotParser.Services
             { 19,  "Другое" }
         };
 
+        public static readonly Dictionary<int, string> FrCategories = new()
+        {
+            { 0,    "Все проекты" },
+            { 577,  "3D-графика" },
+            { 590,  "Арт и иллюстрации" },
+            { 133,  "Аутсорсинг и консалтинг" },
+            { 116,  "Веб-разработка и Продуктовый дизайн" },
+            { 40,   "Графический дизайн" },
+            { 716,  "Дизайн пространства" },
+            { 186,  "Инженерия" },
+            { 673,  "Интернет-продвижение" },
+            { 724,  "Искусственный интеллект" },
+            { 4,    "IT и разработка" },
+            { 117,  "Маркетинг и реклама" },
+            { 565,  "Медиа и моушен дизайн" },
+            { 89,   "Музыка и звук" },
+            { 663,  "Обучение и образование" },
+            { 29,   "Переводы" },
+            { 124,  "Тексты" },
+            { 98,   "Фотография" }
+        };
+
+        public static readonly Dictionary<int, string> WsCategories = new()
+        {
+            { 1,           "Все тендеры" },
+            { 2,   "Разработка сайтов" },
+            { 3,                "SEO" },
+            { 4,            "Контекстная реклама" },
+            { 5,  "Мобильные приложения" },
+            { 6,                "SMM и PR" },
+            { 7,          "Маркетинг" },
+            { 8,           "Дизайн и бренд" },
+            { 9,        "Контент и копирайтинг" },
+            { 10,                "CRM, 1C, ПО, боты" },
+            { 11,            "Игры" },
+            { 12,    "Видео и фото" }
+        };
+
+        public static readonly Dictionary<int, string?> CategoryIdToSlug = new()
+        {
+            { 1, null },                    // Все тендеры
+            { 2, "web-development" },
+            { 3, "seo" },
+            { 4, "context" },
+            { 5, "apps-development" },
+            { 6, "smm" },
+            { 7, "marketing" },
+            { 8, "identity" },
+            { 9, "copywriting" },
+            { 10, "crm" },
+            { 11, "gamedev" },
+            { 12, "videoproduction" }
+        };
+
         public FreelanceService(ITelegramBotClient bot, KworkBotDbContext db, KworkParser kworkParser, FlParser flParser)
         {
             _bot = bot;
             _db = db;
             _kworkParser = kworkParser;
             _flParser = flParser;
+        }
+
+        public async Task<bool> MatchesKeywords(long userId, string title)
+        {
+            var keywords = await _db.UserKeywordFilters
+                .Where(k => k.UserId == userId && k.IsActive)
+                .Select(k => k.Keyword.ToLower())
+                .ToListAsync();
+
+            if (!keywords.Any()) return true; // если нет фильтров — пропускаем всё
+
+            var lowerTitle = title.ToLower();
+            return keywords.Any(k => lowerTitle.Contains(k));
         }
 
         // ─────────────────────── ГЛАВНОЕ МЕНЮ ───────────────────────
@@ -99,6 +166,8 @@ namespace BotParser.Services
                 new[] { InlineKeyboardButton.WithCallbackData("Kwork.ru", "kwork_menu") },
                 new[] { InlineKeyboardButton.WithCallbackData("FL.ru", "fl_menu") },
                 new[] { InlineKeyboardButton.WithCallbackData("YouDo.com", "youdo_menu") },
+                new[] { InlineKeyboardButton.WithCallbackData("Freelance.ru", "fr_menu") },
+                new[] { InlineKeyboardButton.WithCallbackData("Workspace.ru", "workspace_menu") },
                 new[] { InlineKeyboardButton.WithCallbackData("Мои подписки", "my_subscriptions") }
             };
 
@@ -114,17 +183,28 @@ namespace BotParser.Services
         // ─────────────────────── МЕНЮ KWORK ───────────────────────
         public async Task ShowKworkMenu(long chatId, long userId, int? messageId = null)
         {
-            var text = "<b>Kwork.ru</b>\n\nВыбери рубрики:";
-            var buttons = KworkCategories.Select(kvp =>
-                InlineKeyboardButton.WithCallbackData(kvp.Value, $"kwork_cat_{kvp.Key}"))
-                .Select(b => new InlineKeyboardButton[] { b }).ToList();
+            var subs = await _db.FrCategories.Where(c => c.UserId == userId).ToListAsync();
+            var text = "<b>Kwork.ru</b>\n\nВыбери категории (статус подписки):";
+            var buttons = new List<InlineKeyboardButton[]>();
 
+            foreach (var kvp in KworkCategories)
+            {
+                var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
+                var status = sub != null
+                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    : "❌";
+                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"kwork_cat_{kvp.Key}") });
+            }
+
+            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "kwork_set_intervals") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
+            var markup = new InlineKeyboardMarkup(buttons.ToArray());
             if (messageId.HasValue)
-                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: new InlineKeyboardMarkup(buttons));
+                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: markup);
             else
-                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: new InlineKeyboardMarkup(buttons));
+                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
         }
 
         public async Task ToggleKworkCategory(long userId, int catId, long chatId, string mId)
@@ -155,17 +235,28 @@ namespace BotParser.Services
         // ─────────────────────── МЕНЮ FL.RU ───────────────────────
         public async Task ShowFlMenu(long chatId, long userId, int? messageId = null)
         {
-            var text = "<b>FL.ru</b>\n\nВыбери рубрики:";
-            var buttons = FlCategories.Select(kvp =>
-                InlineKeyboardButton.WithCallbackData(kvp.Value, $"fl_cat_{kvp.Key}"))
-                .Select(b => new InlineKeyboardButton[] { b }).ToList();
+            var subs = await _db.FlCategories.Where(c => c.UserId == userId).ToListAsync();
+            var text = "<b>FL.ru</b>\n\nВыбери категории (статус подписки):";
+            var buttons = new List<InlineKeyboardButton[]>();
 
+            foreach (var kvp in FlCategories)
+            {
+                var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
+                var status = sub != null
+                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    : "❌";
+                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fl_cat_{kvp.Key}") });
+            }
+
+            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "fl_set_intervals") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
+            var markup = new InlineKeyboardMarkup(buttons.ToArray());
             if (messageId.HasValue)
-                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: new InlineKeyboardMarkup(buttons));
+                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: markup);
             else
-                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: new InlineKeyboardMarkup(buttons));
+                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
         }
 
         public async Task ToggleFlCategory(long userId, int catId, long chatId, string mId)
@@ -199,8 +290,10 @@ namespace BotParser.Services
             var kworkSubs = await _db.KworkCategories.Where(c => c.UserId == userId).ToListAsync();
             var flSubs = await _db.FlCategories.Where(c => c.UserId == userId).ToListAsync();
             var youDo = await _db.YoudoCategories.Where(c => c.UserId == userId).ToListAsync();
+            var frSubs = await _db.FrCategories.Where(c => c.UserId == userId).ToListAsync();
+            var wsSubs = await _db.WorkspaceCategories.Where(c => c.UserId == userId).ToListAsync();
 
-            if (!kworkSubs.Any() && !flSubs.Any() && !youDo.Any())
+            if (!kworkSubs.Any() && !flSubs.Any() && !youDo.Any() && !frSubs.Any() && !wsSubs.Any())
             {
                 var texts = "У тебя пока нет активных подписок";
                 var markup = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("Назад", "main_menu"));
@@ -212,28 +305,31 @@ namespace BotParser.Services
                 return;
             }
 
-            var lines = new List<string> { $"<b>Мои подписки ({kworkSubs.Count + flSubs.Count})</b>\n\n" };
+            var lines = new List<string> { $"<b>Мои подписки ({kworkSubs.Count + flSubs.Count + youDo.Count + frSubs.Count + wsSubs.Count})</b>\n\n" };
 
             if (kworkSubs.Any())
             {
-                lines.Add("<b>Kwork.ru:</b>");
-                foreach (var c in kworkSubs)
-                    lines.Add($"  {GetStatus(c.NotificationInterval)} <b>{c.Name}</b> → {GetStatus(c.NotificationInterval)}");
-                lines.Add("");
+                lines.Add("<b>Kwork.ru: 1️⃣</b>");
             }
 
             if (flSubs.Any())
             {
-                lines.Add("<b>FL.ru:</b>");
-                foreach (var c in flSubs)
-                    lines.Add($"  {GetStatus(c.NotificationInterval)} <b>{c.Name}</b> → {GetStatus(c.NotificationInterval)}");
+                lines.Add("<b>FL.ru: 2️⃣</b>");
             }
 
             if (youDo.Any())
             {
-                lines.Add("<b>Youdo.com:</b>");
-                foreach(var c in youDo)
-                    lines.Add($"  {GetStatus(c.NotificationInterval)} <b>{c.Name}</b> → {GetStatus(c.NotificationInterval)}");
+                lines.Add("<b>Youdo.com: 3️⃣</b>");
+            }
+
+            if (frSubs.Any())
+            {
+                lines.Add("<b>Freelance.ru: 4️⃣</b>");
+            }
+
+            if (wsSubs.Any())
+            {
+                lines.Add("<b>Workspace.ru: 5️⃣</b>");
             }
 
             var text = string.Join("\n", lines);
@@ -242,35 +338,57 @@ namespace BotParser.Services
 
             foreach (var c in kworkSubs)
             {
-                var status = c.NotificationInterval == "off" ? "ВЫКЛ" : "ВКЛ";
+                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
                 buttons.Add(new[]
                 {
         InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)}",
+            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 1️⃣",
             $"edit_interval_kwork_{c.CategoryId}")
-    });
+                });
             }
 
             foreach (var c in flSubs)
             {
-                var status = c.NotificationInterval == "off" ? "ВЫКЛ" : "ВКЛ";
+                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
                 buttons.Add(new[]
                 {
         InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)}",
+            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 2️⃣",
             $"edit_interval_fl_{c.CategoryId}")
-    });
+                });
             }
 
             foreach (var c in youDo)
             {
-                var status = c.NotificationInterval == "off" ? "ВЫКЛ" : "ВКЛ";
+                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
                 buttons.Add(new[]
                 {
         InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)}",
+            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 3️⃣",
             $"edit_interval_youdo_{c.CategoryId}")
-    });
+                });
+            }
+
+            foreach (var c in frSubs)
+            {
+                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
+                buttons.Add(new[]
+                {
+        InlineKeyboardButton.WithCallbackData(
+            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 4️⃣",
+            $"edit_interval_fr_{c.CategoryId}")
+                });
+            }
+
+            foreach (var c in wsSubs)
+            {
+                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
+                buttons.Add(new[]
+                {
+        InlineKeyboardButton.WithCallbackData(
+            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 5️⃣",
+            $"edit_interval_ws_{c.CategorySlug}")
+                });
             }
 
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
@@ -361,6 +479,22 @@ namespace BotParser.Services
                         await _db.SaveChangesAsync();
                     }
                     break;
+                case "fr":
+                    var frCat = await _db.FrCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == categoryId);
+                    if (frCat != null)
+                    {
+                        frCat.NotificationInterval = interval;
+                        await _db.SaveChangesAsync();
+                    }
+                    break;
+                case "ws":
+                    var wrCat = await _db.WorkspaceCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategorySlug == categoryId);
+                    if (wrCat != null)
+                    {
+                        wrCat.NotificationInterval = interval;
+                        await _db.SaveChangesAsync();
+                    }
+                    break;
 
                 default:
                     Console.WriteLine($"Неизвестная платформа: {platform}"); // Лог для дебага
@@ -428,6 +562,8 @@ namespace BotParser.Services
                 "kwork" => KworkCategories.GetValueOrDefault(categoryId, "Неизвестная"),
                 "fl" => FlCategories.GetValueOrDefault(categoryId, "Неизвестная"),
                 "youdo" => YoudoCategories.GetValueOrDefault(categoryId, "Неизвестная"),
+                "fr" => FrCategories.GetValueOrDefault(categoryId, "Неизвестная"),
+                "ws" => WsCategories.GetValueOrDefault(categoryId, "Неизвестная"),
                 _ => "Неизвестная категория"
             };
 
@@ -443,6 +579,13 @@ namespace BotParser.Services
                 case "youdo":
                     currentInterval = (await _db.YoudoCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == categoryId))?.NotificationInterval ?? "off";
                     break;
+                case "fr":
+                    currentInterval = (await _db.FrCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == categoryId))?.NotificationInterval ?? "off";
+                    break;
+                case "ws":
+                    currentInterval = (await _db.WorkspaceCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategorySlug == categoryId))?.NotificationInterval ?? "off";
+                    break;
+
             }
 
             var prefix = platform.ToLower();
@@ -471,6 +614,82 @@ namespace BotParser.Services
             {
                 await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
             }
+        }
+
+        public async Task ShowFrMenu(long chatId, long userId, int? messageId = null)
+        {
+            var subs = await _db.FrCategories.Where(c => c.UserId == userId).ToListAsync();
+            var text = "<b>Freelance.ru</b>\n\nВыбери категории (статус подписки):";
+            var buttons = new List<InlineKeyboardButton[]>();
+
+            foreach (var kvp in FrCategories)
+            {
+                var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
+                var status = sub != null
+                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    : "❌";
+                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fr_cat_{kvp.Key}") });
+            }
+
+            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "fr_set_intervals") });
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
+
+            var markup = new InlineKeyboardMarkup(buttons.ToArray());
+            if (messageId.HasValue)
+                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: markup);
+            else
+                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
+        }
+
+        public async Task SendFrOrderAsync(long chatId, FreelanceRuParser.FrOrder order)
+        {
+            var title = WebUtility.HtmlEncode(order.Title);
+            var budget = order.Budget != null ? $"\nБюджет: <b>{order.Budget}</b>" : "";
+            var deadline = order.Deadline != null ? $"\nСрок: <b>{order.Deadline}</b>" : "";
+            var cat = order.Category != null ? $"\nКатегория: <b>{order.Category}</b>" : "";
+            var desc = order.Description != null ? "\n\n" + WebUtility.HtmlEncode(order.Description.Length > 500 ? order.Description[..500] + "…" : order.Description) : "";
+
+            var text = $"<b>Freelance.ru: {title}</b>{budget}{deadline}{cat}{desc}\n\n<a href=\"{order.Url}\">Перейти к проекту</a>";
+            await _bot.SendMessage(chatId, text, ParseMode.Html);
+        }
+
+        public async Task ShowWorkspaceMenu(long chatId, long userId, int? messageId = null)
+        {
+            var subs = await _db.WorkspaceCategories.Where(c => c.UserId == userId).ToListAsync();
+            var text = "<b>Workspace.ru</b>\n\nВыбери категории (статус подписки):";
+            var buttons = new List<InlineKeyboardButton[]>();
+
+            foreach (var kvp in WsCategories)
+            {
+                var sub = subs.FirstOrDefault(s => s.CategorySlug == kvp.Key);
+                var status = sub != null
+                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    : "❌";
+                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"ws_cat_{kvp.Key}") });
+            }
+
+            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "ws_set_intervals") });
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
+
+            var markup = new InlineKeyboardMarkup(buttons.ToArray());
+            if (messageId.HasValue)
+                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: markup);
+            else
+                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
+        }
+
+        public async Task SendWsOrderAsync(long chatId, WorkspaceRuParser.WsOrder order)
+        {
+            var text = $"<b>Workspace.ru</b>\n\n" +
+                       $"<b>{order.Title}</b>\n" +
+                       $"Бюджет: <b>{order.Budget}</b>\n" +
+                       $"Дедлайн: <b>{order.Deadline}</b>\n" +
+                       $"Опубликован: {order.Published}\n\n" +
+                       $"<a href=\"{order.Url}\">Перейти к тендеру</a>";
+
+            await _bot.SendMessage(chatId, text, ParseMode.Html);
         }
     }
 }

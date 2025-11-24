@@ -53,7 +53,7 @@ namespace BotParser.Parsers
             var cards = doc.DocumentNode.SelectNodes("//div[starts-with(@id, 'project-item') and contains(@class, 'b-post')]");
             if (cards == null) return orders;
 
-            foreach (var card in cards.Take(30))
+            foreach (var card in cards.Take(10))
             {
                 try
                 {

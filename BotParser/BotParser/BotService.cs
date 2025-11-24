@@ -46,10 +46,11 @@ namespace BotParser
         var data = cb.Data!;
         var chatId = cb.Message!.Chat.Id;
         var userId = cb.From.Id;
-            var username = cb.From.Username;
-            await _freelance.EnsureUserExists(userId, username);
-            var msgId = cb.Message.MessageId;
+        var username = cb.From.Username;
+        var msgId = cb.Message.MessageId;
         var mId = cb.Id;
+
+            await _freelance.EnsureUserExists(userId, username);
 
             try
             {
@@ -65,6 +66,9 @@ namespace BotParser
 
                 else if (data == "my_subscriptions")
                     await _freelance.ShowMySubscriptions(chatId, userId, msgId);
+                
+                else if (data == "fr_menu")
+                    await _freelance.ShowFrMenu(chatId, userId, msgId);
 
                 else if (data.StartsWith("kwork_cat_"))
                 {
@@ -148,6 +152,17 @@ namespace BotParser
                     await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "youdo", msgId);
                 }
 
+                else if (data.StartsWith("edit_interval_fr_"))
+                {
+                    var catId = int.Parse(data["edit_interval_fr_".Length..]);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fr", msgId);
+                }
+                else if (data.StartsWith("edit_interval_ws_"))
+                {
+                    var catId = int.Parse(data["edit_interval_ws_".Length..]);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "ws", msgId);
+                }
+
                 else if (data.Contains("_setint_"))
                 {
                     var parts = data.Split('_');
@@ -157,7 +172,7 @@ namespace BotParser
 
                     await _freelance.SetNotificationInterval(userId, catId, interval, platform);
                     await _bot.AnswerCallbackQuery(cb.Id, $"Интервал: {GetPrettyInterval(interval)}");
-                    await _freelance.ShowMainMenu(chatId);
+                    //await _freelance.ShowMainMenu(chatId);
                 }
 
                 else if (data == "youdo_menu")
@@ -190,6 +205,66 @@ namespace BotParser
 
                     // ← Только обновляем меню YouDo, без прыжка в интервалы
                     await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "youdo", msgId);
+                }
+
+                else if (data.StartsWith("fr_cat_"))
+                {
+                    var catId = int.Parse(data["fr_cat_".Length..]);
+                    var catName = FreelanceService.FrCategories.GetValueOrDefault(catId, "Неизвестная");
+                    var existing = await _db.FrCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId);
+
+                    if (existing != null)
+                    {
+                        _db.FrCategories.Remove(existing);
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
+                    }
+                    else
+                    {
+                        _db.FrCategories.Add(new FrCategory
+                        {
+                            UserId = userId,
+                            CategoryId = catId,
+                            Name = catName,
+                            NotificationInterval = "off"
+                        });
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                    }
+
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fr", msgId);
+                }
+
+                else if (data == "workspace_menu")
+                    await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
+
+                else if (data.StartsWith("ws_cat_"))
+                {
+                    var slug = int.Parse( data["ws_cat_".Length..]);
+                    var name = FreelanceService.WsCategories.GetValueOrDefault(slug, "Неизвестно");
+                    var existing = await _db.WorkspaceCategories
+                        .FirstOrDefaultAsync(c => c.UserId == userId && c.CategorySlug == slug);
+
+                    if (existing != null)
+                    {
+                        _db.WorkspaceCategories.Remove(existing);
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
+                    }
+                    else
+                    {
+                        _db.WorkspaceCategories.Add(new WorkspaceCategory
+                        {
+                            UserId = userId,
+                            CategorySlug = slug,
+                            Name = name,
+                            NotificationInterval = "off"
+                        });
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                    }
+                    var catId = int.Parse(data["ws_cat_".Length..]);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "ws", msgId);
                 }
             }
             catch (Exception ex)

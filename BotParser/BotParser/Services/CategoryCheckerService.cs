@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using static BotParser.Parsers.FlParser;
 
 
 namespace BotParser.Services
@@ -35,6 +34,8 @@ namespace BotParser.Services
                     await CheckKworkSubscriptions(ct);
                     await CheckFlSubscriptions(ct);
                     await CheckYoudoSubscriptions(ct);
+                    await CheckFrSubscriptions(ct);
+                    await CheckWorkspaceSubscriptions(ct);
                 }
                 catch (Exception ex)
                 {
@@ -42,6 +43,98 @@ namespace BotParser.Services
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(22), ct);
+            }
+        }
+
+        private async Task CheckWorkspaceSubscriptions(CancellationToken ct)
+        {
+            using var scope = _sp.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
+            var parser = scope.ServiceProvider.GetRequiredService<WorkspaceRuParser>();
+            var freelance = scope.ServiceProvider.GetRequiredService<FreelanceService>();
+
+            var subs = await db.WorkspaceCategories
+                .Where(c => c.NotificationInterval != "off")
+                .ToListAsync(ct);
+
+            foreach (var sub in subs)
+            {
+                var key = $"ws_{sub.UserId}_{sub.CategorySlug}";
+                var minutes = IntervalToMinutes(sub.NotificationInterval);
+                if (minutes <= 0) continue;
+                if ((DateTime.UtcNow - _lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue)).TotalMinutes < minutes) continue;
+
+                var slug = sub.CategorySlug == 1 ? 1 : sub.CategorySlug;
+                var tenders = await parser.GetActiveTendersAsync(slug);
+                var sent = await db.SentWsOrders
+                    .Where(s => s.UserTelegramId == sub.UserId)
+                    .Select(s => s.TenderId)
+                    .ToHashSetAsync(ct);
+
+                var newTenders = tenders.Where(t => !sent.Contains(t.TenderId)).Take(7).ToList();
+
+                foreach (var t in newTenders)
+                {
+                    await freelance.SendWsOrderAsync(sub.UserId, t);
+                    db.SentWsOrders.Add(new SentWsOrder { TenderId = t.TenderId, UserTelegramId = sub.UserId });
+                    await Task.Delay(1200, ct);
+                }
+
+                if (newTenders.Any()) await db.SaveChangesAsync(ct);
+                _lastCheckTimes[key] = DateTime.UtcNow;
+            }
+        }
+
+        private async Task CheckFrSubscriptions(CancellationToken ct)
+        {
+            using var scope = _sp.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
+            var parser = scope.ServiceProvider.GetRequiredService<FreelanceRuParser>();
+            var freelance = scope.ServiceProvider.GetRequiredService<FreelanceService>();
+
+            var subs = await db.FrCategories
+                .Where(c => c.NotificationInterval != "off" && c.NotificationInterval != null)
+                .ToListAsync(ct);
+
+            foreach (var sub in subs)
+            {
+                var key = $"fr_{sub.UserId}_{sub.CategoryId}";
+                var minutes = IntervalToMinutes(sub.NotificationInterval);
+                if (minutes <= 0) continue;
+
+                var lastCheck = _lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue);
+                if ((DateTime.UtcNow - lastCheck).TotalMinutes < minutes) continue;
+
+                try
+                {
+                    var orders = await parser.GetNewOrdersAsync(sub.CategoryId == 0 ? null : (int?)sub.CategoryId);
+                    var sentIds = await db.SentFrOrders
+                        .Where(s => s.UserTelegramId == sub.UserId)
+                        .Select(s => s.ProjectId)
+                        .ToHashSetAsync(ct);
+
+                    var newOrders = orders.Where(o => !sentIds.Contains(o.ProjectId)).Take(5).ToList();
+
+                    foreach (var order in newOrders)
+                    {
+                        await freelance.SendFrOrderAsync(sub.UserId, order);
+                        db.SentFrOrders.Add(new SentFrOrder
+                        {
+                            ProjectId = order.ProjectId,
+                            UserTelegramId = sub.UserId
+                        });
+                        await Task.Delay(1200, ct);
+                    }
+
+                    if (newOrders.Any())
+                        await db.SaveChangesAsync(ct);
+
+                    _lastCheckTimes[key] = DateTime.UtcNow;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка парсинга Freelance.ru: {ex.Message}");
+                }
             }
         }
 

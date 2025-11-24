@@ -66,7 +66,7 @@ namespace BotParser.Parsers
             var cards = doc.DocumentNode.SelectNodes("//li[contains(@class, 'TasksList_listItem')]");
             if (cards == null) return orders;
 
-            foreach (var card in cards.Take(30))
+            foreach (var card in cards.Take(10))
             {
                 try
                 {
