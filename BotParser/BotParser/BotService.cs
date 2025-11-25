@@ -4,26 +4,29 @@ using BotParser.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Collections.Concurrent;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace BotParser
 {
     public class BotService : BackgroundService
     {
-    private readonly ITelegramBotClient _bot;
-    private readonly IServiceProvider _sp;
-    private readonly FreelanceService _freelance;
-    private readonly KworkBotDbContext _db;
+        private readonly ITelegramBotClient _bot;
+        private readonly IServiceProvider _sp;
+        private readonly FreelanceService _freelance;
+        private readonly KworkBotDbContext _db;
+        private readonly ConcurrentDictionary<long, (string platform, int categoryId)> WaitingForKeywords = new();
 
-    public BotService(ITelegramBotClient bot, IServiceProvider sp, FreelanceService freelance, KworkBotDbContext db)
-    {
+        public BotService(ITelegramBotClient bot, IServiceProvider sp, FreelanceService freelance, KworkBotDbContext db)
+        {
         _bot = bot;
         _sp = sp;
         _db = db;
         _freelance = freelance;
-    }
+        }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -41,14 +44,64 @@ namespace BotParser
                 return;
         }
 
-        if (update.CallbackQuery is not { } cb) return;
+            if (update.Message?.Chat.Id != null)
+            {
 
-        var data = cb.Data!;
-        var chatId = cb.Message!.Chat.Id;
-        var userId = cb.From.Id;
-        var username = cb.From.Username;
-        var msgId = cb.Message.MessageId;
-        var mId = cb.Id;
+                var chatIdm = update.Message!.Chat.Id;
+
+                if (WaitingForKeywords.TryGetValue(chatIdm, out var state))
+                {
+                    var (platform, catId) = state;
+
+                    var words = update.Message!.Text!
+                        .Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(w => w.Trim().ToLower())
+                        .Where(w => w.Length > 2)
+                        .Distinct()
+                        .ToList();
+
+                    if (words.Count == 0)
+                    {
+                        await _bot.SendMessage(chatIdm, "Не нашёл слов. Попробуй ещё раз.");
+                        return;
+                    }
+
+                    foreach (var word in words)
+                    {
+                        bool exists = await _db.UserKeywordFilters.AnyAsync(k =>
+                            k.UserId == chatIdm &&
+                            k.Platform == platform &&
+                            k.CategoryId == catId &&
+                            k.Word == word);
+
+                        if (!exists)
+                        {
+                            await _db.UserKeywordFilters.AddAsync(new UserKeywordFilter
+                            {
+                                UserId = chatIdm,
+                                Platform = platform,
+                                CategoryId = catId,
+                                Word = word
+                            });
+                        }
+                    }
+
+                    await _db.SaveChangesAsync();
+
+                    await _bot.SendMessage(chatIdm, $"Добавлено {words.Count} слов(а) в фильтр!");
+
+                    WaitingForKeywords.TryRemove(chatIdm, out _);
+                    return;
+                }
+            }
+
+            if (update.CallbackQuery is not { } cb) return;
+
+            var data = cb.Data!;
+            var chatId = cb.Message!.Chat.Id;
+            var userId = cb.From.Id;
+            var username = cb.From.Username;
+            var msgId = cb.Message.MessageId;
 
             await _freelance.EnsureUserExists(userId, username);
 
@@ -99,7 +152,6 @@ namespace BotParser
 
                         await _bot.AnswerCallbackQuery(cb.Id, "ППодписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
 
-                        // ←←←← СРАЗУ ПРОВАЛИВАЕМСЯ В ВЫБОР ИНТЕРВАЛА
                         await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "kwork", msgId);
                     }
                 }
@@ -266,6 +318,104 @@ namespace BotParser
                     var catId = int.Parse(data["ws_cat_".Length..]);
                     await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "ws", msgId);
                 }
+
+                else if (data.StartsWith("set_keywords_"))
+                {
+                    // Пример: set_keywords_ws_2 → платформа = "ws", catId = 2
+                    var parts = data["set_keywords_".Length..].Split('_'); // ws_2 → ["ws", "2"]
+                    var platformShort = parts[0];  // "ws", "fl", "fr", "kwork", "youdo"
+                    var catIdStr = parts[1];
+                    var catId = int.Parse(catIdStr);
+
+                    // Преобразуем короткое имя в полное (для базы)
+                    string platform = platformShort switch
+                    {
+                        "ws" => "workspace",
+                        "fl" => "fl",
+                        "fr" => "freelance",
+                        "kwork" => "kwork",
+                        "youdo" => "youdo",
+                        _ => throw new Exception("Неизвестная платформа")
+                    };
+
+                    // Получаем название рубрики
+                    string categoryName = platform switch
+                    {
+                        "workspace" => FreelanceService.WsCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "fl" => FreelanceService.FlCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "freelance" => FreelanceService.FrCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "kwork" => FreelanceService.KworkCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "youdo" => FreelanceService.YoudoCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        _ => "Неизвестно"
+                    };
+
+                    // Сохраняем состояние
+                    WaitingForKeywords[chatId] = (platform, catId);
+
+                    // Красивое сообщение
+                    await _bot.SendMessage(chatId,
+                        $"<b>Фильтр по словам</b>\n\n" +
+                        $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
+                        $"Рубрика: <b>{categoryName}</b>\n\n" +
+                        $"Отправь слова через запятую:\n" +
+                        $"Например: битрикс, laravel, под ключ, telegram bot",
+                        ParseMode.Html);
+                }
+
+                else if (data?.StartsWith("clear_keywords_") == true)
+                {
+                    var parts = data["clear_keywords_".Length..].Split('_');
+                    var platformShort = parts[0]; // ws, fl, fr, kwork, youdo
+                    var catId = int.Parse(parts[1]);
+
+                    // Преобразуем короткое имя в полное (как в set_keywords)
+                    string platform = platformShort switch
+                    {
+                        "ws" => "workspace",
+                        "fl" => "fl",
+                        "fr" => "freelance",
+                        "kwork" => "kwork",
+                        "youdo" => "youdo",
+                        _ => throw new Exception("Неизвестная платформа")
+                    };
+
+                    // Получаем название рубрики для красивого ответа
+                    string categoryName = platform switch
+                    {
+                        "workspace" => FreelanceService.WsCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "fl" => FreelanceService.FlCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "freelance" => FreelanceService.FrCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "kwork" => FreelanceService.KworkCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        "youdo" => FreelanceService.YoudoCategories.GetValueOrDefault(catId, "Неизвестно"),
+                        _ => "Неизвестно"
+                    };
+
+                    // УДАЛЯЕМ ВСЕ слова для этой рубрики у этого пользователя
+                    var keywordsToDelete = await _db.UserKeywordFilters
+                        .Where(k => k.UserId == userId && k.Platform == platform && k.CategoryId == catId)
+                        .ToListAsync();
+
+                    if (keywordsToDelete.Any())
+                    {
+                        _db.UserKeywordFilters.RemoveRange(keywordsToDelete);
+                        await _db.SaveChangesAsync();
+
+                        await _bot.AnswerCallbackQuery(cb.Id, "Фильтр удалён!");
+                        await _bot.SendMessage(chatId,
+                            $"<b>Фильтр по словам удалён</b>\n\n" +
+                            $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
+                            $"Рубрика: <b>{categoryName}</b>\n\n" +
+                            $"Теперь будут приходить все заказы из этой рубрики.",
+                            ParseMode.Html);
+                    }
+                    else
+                    {
+                        await _bot.AnswerCallbackQuery(cb.Id, "Фильтр и так пустой");
+                    }
+
+                    // Обновляем меню (если нужно)
+                    //await ShowWorkspaceMenu(chatId, userId, messageId); // или нужное меню
+                }
             }
             catch (Exception ex)
             {
@@ -273,6 +423,17 @@ namespace BotParser
                 await _bot.AnswerCallbackQuery(cb.Id, "Произошла ошибка");
             }
     }
+
+        private static string GetPlatformName(string shortName) => shortName switch
+        {
+            "ws" => "Workspace.ru",
+            "fl" => "FL.ru",
+            "fr" => "Freelance.ru",
+            "kwork" => "Kwork.ru",
+            "youdo" => "YouDo.com",
+            _ => shortName
+        };
+
         private string GetPrettyInterval(string interval) => interval switch
         {
             "instant" => "Моментально",

@@ -83,8 +83,9 @@ namespace BotParser.Db
 
             modelBuilder.Entity<UserKeywordFilter>(e =>
             {
-                e.HasIndex(x => x.UserId);
-                e.Property(x => x.Keyword).HasMaxLength(100);
+                e.HasIndex(x => new { x.UserId, x.Platform, x.CategoryId });
+                e.Property(x => x.Word).HasMaxLength(100);
+                e.Property(x => x.Platform).HasMaxLength(20);
             });
 
             modelBuilder.Entity<AllParsedOrder>(e =>

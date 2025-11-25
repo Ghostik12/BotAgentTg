@@ -1,6 +1,7 @@
 ﻿using BotParser.Db;
 using BotParser.Models;
 using BotParser.Parsers;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using System.Net;
 using Telegram.Bot;
@@ -145,17 +146,19 @@ namespace BotParser.Services
             _flParser = flParser;
         }
 
-        public async Task<bool> MatchesKeywords(long userId, string title)
+        public async Task<bool> TitleContainsKeyword(long userId, string platform, int categoryId, string title)
         {
             var keywords = await _db.UserKeywordFilters
-                .Where(k => k.UserId == userId && k.IsActive)
-                .Select(k => k.Keyword.ToLower())
+                .Where(k => k.UserId == userId &&
+                            k.Platform == platform &&
+                            k.CategoryId == categoryId)
+                .Select(k => k.Word.ToLower())
                 .ToListAsync();
 
-            if (!keywords.Any()) return true; // если нет фильтров — пропускаем всё
+            if (keywords.Count == 0) return true; // нет слов — присылаем всё
 
             var lowerTitle = title.ToLower();
-            return keywords.Any(k => lowerTitle.Contains(k));
+            return keywords.Any(word => lowerTitle.Contains(word));
         }
 
         // ─────────────────────── ГЛАВНОЕ МЕНЮ ───────────────────────
@@ -591,12 +594,14 @@ namespace BotParser.Services
             var prefix = platform.ToLower();
             var buttons = new[]
             {
-        new[] { InlineKeyboardButton.WithCallbackData("Моментально (1 мин)", $"{prefix}_setint_{categoryId}_instant") },
-        new[] { InlineKeyboardButton.WithCallbackData("Раз в 5 мин", $"{prefix}_setint_{categoryId}_5min") },
-        new[] { InlineKeyboardButton.WithCallbackData("Раз в 15 мин", $"{prefix}_setint_{categoryId}_15min") },
-        new[] { InlineKeyboardButton.WithCallbackData("Раз в час", $"{prefix}_setint_{categoryId}_hour") },
-        new[] { InlineKeyboardButton.WithCallbackData("Раз в день", $"{prefix}_setint_{categoryId}_day") },
-        new[] { InlineKeyboardButton.WithCallbackData("Выключить", $"{prefix}_setint_{categoryId}_off") },
+        new[] { InlineKeyboardButton.WithCallbackData("Моментально (1 мин)", $"{prefix}_setint_{categoryId}_instant") ,
+          InlineKeyboardButton.WithCallbackData("Раз в 5 мин", $"{prefix}_setint_{categoryId}_5min") },
+        new[] { InlineKeyboardButton.WithCallbackData("Раз в 15 мин", $"{prefix}_setint_{categoryId}_15min") ,
+          InlineKeyboardButton.WithCallbackData("Раз в час", $"{prefix}_setint_{categoryId}_hour") },
+        new[] { InlineKeyboardButton.WithCallbackData("Раз в день", $"{prefix}_setint_{categoryId}_day") ,
+          InlineKeyboardButton.WithCallbackData("Выключить", $"{prefix}_setint_{categoryId}_off") },
+        new[] { InlineKeyboardButton.WithCallbackData("Фильтр по словам", $"set_keywords_{prefix}_{categoryId}") ,
+          InlineKeyboardButton.WithCallbackData("Удалить фильтр", $"clear_keywords_{prefix}_{categoryId}") },
         new[] { InlineKeyboardButton.WithCallbackData("Назад в подписки", "my_subscriptions") }
     };
 

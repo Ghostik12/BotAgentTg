@@ -73,11 +73,30 @@ namespace BotParser.Services
 
                 var newTenders = tenders.Where(t => !sent.Contains(t.TenderId)).Take(7).ToList();
 
-                foreach (var t in newTenders)
+                foreach (var tender in newTenders)
                 {
-                    await freelance.SendWsOrderAsync(sub.UserId, t);
-                    db.SentWsOrders.Add(new SentWsOrder { TenderId = t.TenderId, UserTelegramId = sub.UserId });
-                    await Task.Delay(1200, ct);
+                    // 1. Уже отправляли этому пользователю?
+                    if (sent.Contains(tender.TenderId)) continue;
+
+                    // 2. Проверяем ключевые слова ТОЛЬКО для этой рубрики
+                    bool matches = await _freelance.TitleContainsKeyword(
+                        sub.UserId,
+                        "workspace",
+                        sub.CategorySlug,
+                        tender.Title);
+
+                    if (!matches) continue; // ← НЕ присылаем, если не подходит
+
+                    // 3. Отправляем!
+                    await _freelance.SendWsOrderAsync(sub.UserId, tender);
+
+                    db.SentWsOrders.Add(new SentWsOrder
+                    {
+                        TenderId = tender.TenderId,
+                        UserTelegramId = sub.UserId
+                    });
+
+                    await Task.Delay(1000, ct);
                 }
 
                 if (newTenders.Any()) await db.SaveChangesAsync(ct);
@@ -115,15 +134,30 @@ namespace BotParser.Services
 
                     var newOrders = orders.Where(o => !sentIds.Contains(o.ProjectId)).Take(5).ToList();
 
-                    foreach (var order in newOrders)
+                    foreach (var tender in newOrders)
                     {
-                        await freelance.SendFrOrderAsync(sub.UserId, order);
+                        // 1. Уже отправляли этому пользователю?
+                        if (sentIds.Contains(tender.ProjectId)) continue;
+
+                        // 2. Проверяем ключевые слова ТОЛЬКО для этой рубрики
+                        bool matches = await _freelance.TitleContainsKeyword(
+                            sub.UserId,
+                            "freelance",
+                            sub.CategoryId,
+                            tender.Title);
+
+                        if (!matches) continue; // ← НЕ присылаем, если не подходит
+
+                        // 3. Отправляем!
+                        await _freelance.SendFrOrderAsync(sub.UserId, tender);
+
                         db.SentFrOrders.Add(new SentFrOrder
                         {
-                            ProjectId = order.ProjectId,
+                            ProjectId = tender.ProjectId,
                             UserTelegramId = sub.UserId
                         });
-                        await Task.Delay(1200, ct);
+
+                        await Task.Delay(1000, ct);
                     }
 
                     if (newOrders.Any())
@@ -167,11 +201,30 @@ namespace BotParser.Services
 
                     var newOrders = orders.Where(o => !sentIds.Contains(o.TaskId)).ToList();
 
-                    foreach (var order in newOrders)
+                    foreach (var tender in newOrders)
                     {
-                        await _freelance.SendYoudoOrderAsync(sub.UserId, order); // Добавь метод в FreelanceService
-                        db.SentYoudoOrders.Add(new SentYoudoOrder { TaskId = order.TaskId, UserTelegramId = sub.UserId });
-                        await Task.Delay(1100, ct);
+                        // 1. Уже отправляли этому пользователю?
+                        if (sentIds.Contains(tender.TaskId)) continue;
+
+                        // 2. Проверяем ключевые слова ТОЛЬКО для этой рубрики
+                        bool matches = await _freelance.TitleContainsKeyword(
+                            sub.UserId,
+                            "youdo",
+                            sub.CategoryId,
+                            tender.Title);
+
+                        if (!matches) continue; // ← НЕ присылаем, если не подходит
+
+                        // 3. Отправляем!
+                        await _freelance.SendYoudoOrderAsync(sub.UserId, tender);
+
+                        db.SentYoudoOrders.Add(new SentYoudoOrder
+                        {
+                            TaskId = tender.TaskId,
+                            UserTelegramId = sub.UserId
+                        });
+
+                        await Task.Delay(1000, ct);
                     }
 
                     if (newOrders.Any()) await db.SaveChangesAsync(ct);
@@ -213,15 +266,30 @@ namespace BotParser.Services
 
                     var newOrders = orders.Where(o => !sentIds.Contains(o.ProjectId)).ToList();
 
-                    foreach (var order in newOrders)
+                    foreach (var tender in newOrders)
                     {
-                        await service.SendKworkOrderAsync(sub.UserId, order);
+                        // 1. Уже отправляли этому пользователю?
+                        if (sentIds.Contains(tender.ProjectId)) continue;
+
+                        // 2. Проверяем ключевые слова ТОЛЬКО для этой рубрики
+                        bool matches = await _freelance.TitleContainsKeyword(
+                            sub.UserId,
+                            "kwork",
+                            sub.CategoryId,
+                            tender.Title);
+
+                        if (!matches) continue; // ← НЕ присылаем, если не подходит
+
+                        // 3. Отправляем!
+                        await _freelance.SendKworkOrderAsync(sub.UserId, tender);
+
                         db.SentOrders.Add(new SentOrder
                         {
-                            ProjectId = order.ProjectId,
+                            ProjectId = tender.ProjectId,
                             UserTelegramId = sub.UserId
                         });
-                        await Task.Delay(1100, ct);
+
+                        await Task.Delay(1000, ct);
                     }
 
                     if (newOrders.Any())
@@ -265,15 +333,30 @@ namespace BotParser.Services
 
                     var newOrders = orders.Where(o => !sentIds.Contains(o.ProjectId)).ToList();
 
-                    foreach (var order in newOrders)
+                    foreach (var tender in newOrders)
                     {
-                        await service.SendFlOrderAsync(sub.UserId, order);
+                        // 1. Уже отправляли этому пользователю?
+                        if (sentIds.Contains(tender.ProjectId)) continue;
+
+                        // 2. Проверяем ключевые слова ТОЛЬКО для этой рубрики
+                        bool matches = await _freelance.TitleContainsKeyword(
+                            sub.UserId,
+                            "fl",
+                            sub.CategoryId,
+                            tender.Title);
+
+                        if (!matches) continue; // ← НЕ присылаем, если не подходит
+
+                        // 3. Отправляем!
+                        await _freelance.SendFlOrderAsync(sub.UserId, tender);
+
                         db.SentFlOrders.Add(new SentFlOrder
                         {
-                            ProjectId = order.ProjectId,
+                            ProjectId = tender.ProjectId,
                             UserTelegramId = sub.UserId
                         });
-                        await Task.Delay(1100, ct);
+
+                        await Task.Delay(1000, ct);
                     }
 
                     if (newOrders.Any())

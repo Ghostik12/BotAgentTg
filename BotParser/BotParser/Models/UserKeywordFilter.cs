@@ -8,8 +8,11 @@ namespace BotParser.Models
     {
         public int Id { get; set; }
         public long UserId { get; set; }
-        public string Keyword { get; set; } = null!;        // например: "битрикс", "laravel", "сайт под ключ", "telegram bot"
-        public bool IsActive { get; set; } = true;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public string Platform { get; set; } = null!;     // "workspace", "kwork", "fl" и т.д.
+        public int CategoryId { get; set; }               // твой int (2, 3, 724 и т.д.)
+
+        public string Word { get; set; } = null!;         // например: "битрикс"
+        public DateTime AddedAt { get; set; } = DateTime.UtcNow;
     }
 }
