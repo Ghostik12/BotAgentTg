@@ -27,11 +27,11 @@ namespace BotParser
                 client.DefaultRequestHeaders.Add("Referer", "https://youdo.com/tasks");
             });
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-                new TelegramBotClient("8565915816:AAFeCJoTB0nwKyLD0z_ruoggkUBrWOv"));
+                new TelegramBotClient("8565915816:AAFeCJoTB0nwKyLD0z_ruoggkUBrWOvx"));
 
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>
-                options.UseSqlite("Data Source=kworkbot9.db"));
+                options.UseSqlite("Data Source=kworkbot13.db"));
 
             // Сервисы
             builder.Services.AddScoped<FreelanceService>();
@@ -41,6 +41,7 @@ namespace BotParser
             builder.Services.AddScoped<YoudoParser>();
             builder.Services.AddScoped<FreelanceRuParser>();
             builder.Services.AddScoped<WorkspaceRuParser>();
+            builder.Services.AddScoped<ProfiRuParser>();
 
             var app = builder.Build();
 

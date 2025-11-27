@@ -36,6 +36,7 @@ namespace BotParser.Services
                     await CheckYoudoSubscriptions(ct);
                     await CheckFrSubscriptions(ct);
                     await CheckWorkspaceSubscriptions(ct);
+                    await CheckProfiSubscriptions(ct);
                 }
                 catch (Exception ex)
                 {
@@ -43,6 +44,60 @@ namespace BotParser.Services
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(22), ct);
+            }
+        }
+
+        private async Task CheckProfiSubscriptions(CancellationToken ct)
+        {
+            using var scope = _sp.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
+            var parser = scope.ServiceProvider.GetRequiredService<ProfiRuParser>();
+            var freelance = scope.ServiceProvider.GetRequiredService<FreelanceService>();
+
+            var subs = await db.ProfiCategories
+                .Where(c => c.NotificationInterval != "off")
+                .ToListAsync(ct);
+
+            foreach (var sub in subs)
+            {
+                var key = $"profi_{sub.UserId}_{sub.Id}";
+                if (_lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue).AddMinutes(1) > DateTime.UtcNow)
+                    continue;
+
+                // Берём запрос из словаря по CategoryId
+                var query = FreelanceService.ProfiQueries[sub.Id]; // у тебя должен быть такой словарь
+                var orders = await parser.GetOrdersAsync(query);
+
+                var sentIds = await db.SentProfiOrders
+                    .Where(s => s.UserTelegramId == sub.UserId)
+                    .Select(s => s.OrderId)
+                    .ToHashSetAsync(ct);
+
+                foreach (var order in orders)
+                {
+                    if (sentIds.Contains(order.OrderId)) continue;
+
+                    bool matches = await freelance.TitleContainsKeyword(
+                        sub.UserId,
+                        "profi",
+                        sub.Id,                         // ← теперь правильно: int!
+                        order.Title + " " + order.Description);
+
+                    if (!matches) continue;
+
+                    await freelance.SendProfiOrderAsync(sub.UserId, order, sub.Id);
+
+                    db.SentProfiOrders.Add(new SentProfiOrder
+                    {
+                        OrderId = order.OrderId,
+                        UserTelegramId = sub.UserId
+                    });
+
+                    await Task.Delay(600, ct);
+                }
+
+                if (orders.Any()) await db.SaveChangesAsync(ct);
+                _lastCheckTimes[key] = DateTime.UtcNow;
             }
         }
 

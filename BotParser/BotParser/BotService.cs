@@ -19,6 +19,7 @@ namespace BotParser
         private readonly FreelanceService _freelance;
         private readonly KworkBotDbContext _db;
         private readonly ConcurrentDictionary<long, (string platform, int categoryId)> WaitingForKeywords = new();
+        private readonly ConcurrentDictionary<long, string> WaitingForProfiCustomQuery = new();
 
         public BotService(ITelegramBotClient bot, IServiceProvider sp, FreelanceService freelance, KworkBotDbContext db)
         {
@@ -37,12 +38,59 @@ namespace BotParser
 
     private async Task HandleUpdate(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
-        if (update.Message?.Text == "/start")
-        {
+            if (update.Message?.Text == "/start")
+            {
                 await _freelance.ShowMainMenu(update.Message.Chat.Id);
                 await _freelance.EnsureUserExists(update.Message.Chat.Id, update.Message.Chat.Username);
                 return;
-        }
+            }
+
+            if (update.Message?.Chat.Id != null)
+            {
+                var userIds = update.Message!.Chat.Id;
+
+                if (WaitingForProfiCustomQuery.TryGetValue(userIds, out var _))
+                {
+                    var queryText = update.Message.Text?.Trim();
+
+                    if (string.IsNullOrEmpty(queryText) || queryText.Length < 2 || queryText.Length > 80)
+                    {
+                        await bot.SendMessage(userIds, "Ошибка: запрос должен быть от 2 до 80 символов.");
+                        return;
+                    }
+
+                    var newProfi = new ProfiCategory
+                    {
+                        UserId = userIds,
+                        SearchQuery = queryText.ToLower(),
+                        Name = queryText.Length > 35 ? queryText.Substring(0, 32) + "..." : queryText,
+                        NotificationInterval = "10m"
+                    };
+
+                    // ← ИСПРАВЛЕНО: обычный using, а не await using
+                    using var scope = _sp.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
+
+                    db.ProfiCategories.Add(newProfi);
+                    await db.SaveChangesAsync();
+
+                    WaitingForProfiCustomQuery.TryRemove(userIds, out _);
+
+                    await bot.SendMessage(userIds,
+                        $"<b>Готово!</b>\n\n" +
+                        $"Запрос: <code>{queryText}</code>\n" +
+                        $"Интервал: каждые 10 минут\n\n" +
+                        $"Заказы уже идут!",
+                        ParseMode.Html,
+                        replyMarkup: new InlineKeyboardMarkup(new[]
+                        {
+            InlineKeyboardButton.WithCallbackData("Мои подписки", "my_subscriptions"),
+            InlineKeyboardButton.WithCallbackData("Настроить интервал", $"edit_interval_profi_{newProfi.Id}")
+                        }));
+
+                    return;
+                }
+            }
 
             if (update.Message?.Chat.Id != null)
             {
@@ -98,8 +146,8 @@ namespace BotParser
             if (update.CallbackQuery is not { } cb) return;
 
             var data = cb.Data!;
-            var chatId = cb.Message!.Chat.Id;
             var userId = cb.From.Id;
+            var chatId = cb.Message.Chat.Id;
             var username = cb.From.Username;
             var msgId = cb.Message.MessageId;
 
@@ -215,6 +263,26 @@ namespace BotParser
                     await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "ws", msgId);
                 }
 
+                else if (data.StartsWith("edit_interval_profi_"))
+                {
+                    var catId = int.Parse(data["edit_interval_profi_".Length..]);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "profi", msgId);
+                }
+
+                else if (data == "profi_add_custom")
+                {
+                    WaitingForProfiCustomQuery[chatId] = "true";  // отдельный словарь
+
+                    await _bot.SendMessage(chatId,
+                        "Напиши свой поисковый запрос для Profi.ru:\n\n" +
+                        "Примеры:\n" +
+                        "• <code>битрикс</code>\n" +
+                        "• <code>telegram бот python</code>\n" +
+                        "• <code>nuxt vue сайт</code>\n" +
+                        "• <code>лендинг за 100к</code>",
+                        ParseMode.Html);
+                }
+
                 else if (data.Contains("_setint_"))
                 {
                     var parts = data.Split('_');
@@ -287,8 +355,41 @@ namespace BotParser
                     await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fr", msgId);
                 }
 
+                //else if (data.StartsWith("profi_cat_"))
+                //{
+                //    var catId = int.Parse(data["profi_cat_".Length..]);
+                //    var name = FreelanceService.ProfiCategories[catId];
+
+                //    var existing = await _db.ProfiCategories
+                //        .FirstOrDefaultAsync(c => c.UserId == userId && c.Id == catId);
+
+                //    if (existing != null)
+                //    {
+                //        _db.ProfiCategories.Remove(existing);
+                //        await _db.SaveChangesAsync();
+                //        await _bot.AnswerCallbackQuery(cb.Id, "Отключено");
+                //    }
+                //    else
+                //    {
+                //        _db.ProfiCategories.Add(new ProfiCategory
+                //        {
+                //            UserId = userId,
+                //            SearchQuery = "",
+                //            Id = catId,
+                //            Name = name,
+                //            NotificationInterval = "off"
+                //        });
+                //        await _db.SaveChangesAsync();
+                //        await _bot.AnswerCallbackQuery(cb.Id, $"Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                //    }
+                //    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "profi", msgId);
+                //}
+
                 else if (data == "workspace_menu")
                     await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
+                
+                else if (data == "profi_menu")
+                    await _freelance.ShowProfiMenu(chatId, userId, msgId);
 
                 else if (data.StartsWith("ws_cat_"))
                 {
@@ -376,6 +477,7 @@ namespace BotParser
                         "fr" => "freelance",
                         "kwork" => "kwork",
                         "youdo" => "youdo",
+                        "profi" => "profi",
                         _ => throw new Exception("Неизвестная платформа")
                     };
 
@@ -431,6 +533,7 @@ namespace BotParser
             "fr" => "Freelance.ru",
             "kwork" => "Kwork.ru",
             "youdo" => "YouDo.com",
+            "profi" => "Profi.ru",
             _ => shortName
         };
 

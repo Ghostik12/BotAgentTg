@@ -20,6 +20,8 @@ namespace BotParser.Db
         public DbSet<WorkspaceCategory> WorkspaceCategories => Set<WorkspaceCategory>();
         public DbSet<UserKeywordFilter> UserKeywordFilters => Set<UserKeywordFilter>();
         public DbSet<AllParsedOrder> AllParsedOrders => Set<AllParsedOrder>();
+        public DbSet<ProfiCategory> ProfiCategories => Set<ProfiCategory>();
+        public DbSet<SentProfiOrder> SentProfiOrders => Set<SentProfiOrder>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -94,6 +96,21 @@ namespace BotParser.Db
                 e.HasIndex(x => x.SavedAt);
                 e.Property(x => x.Platform).HasMaxLength(20);
                 e.Property(x => x.Title).HasMaxLength(500);
+            });
+
+            modelBuilder.Entity<ProfiCategory>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.SearchQuery).HasMaxLength(200).IsRequired();
+                e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+                e.Property(x => x.NotificationInterval).HasMaxLength(20).HasDefaultValue("off");
+                e.HasIndex(x => new { x.UserId, x.SearchQuery }).IsUnique();
+            });
+
+            modelBuilder.Entity<SentProfiOrder>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.HasIndex(x => new { x.UserTelegramId, x.OrderId }).IsUnique();
             });
         }
     }
