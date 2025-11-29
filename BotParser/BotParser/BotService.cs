@@ -355,35 +355,34 @@ namespace BotParser
                     await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fr", msgId);
                 }
 
-                //else if (data.StartsWith("profi_cat_"))
-                //{
-                //    var catId = int.Parse(data["profi_cat_".Length..]);
-                //    var name = FreelanceService.ProfiCategories[catId];
+                else if (data.StartsWith("profi_cat_"))
+                {
+                    var catId = int.Parse(data["profi_cat_".Length..]);
 
-                //    var existing = await _db.ProfiCategories
-                //        .FirstOrDefaultAsync(c => c.UserId == userId && c.Id == catId);
+                    var existing = await _db.ProfiCategories
+                        .FirstOrDefaultAsync(c => c.UserId == userId && c.Id == catId);
 
-                //    if (existing != null)
-                //    {
-                //        _db.ProfiCategories.Remove(existing);
-                //        await _db.SaveChangesAsync();
-                //        await _bot.AnswerCallbackQuery(cb.Id, "Отключено");
-                //    }
-                //    else
-                //    {
-                //        _db.ProfiCategories.Add(new ProfiCategory
-                //        {
-                //            UserId = userId,
-                //            SearchQuery = "",
-                //            Id = catId,
-                //            Name = name,
-                //            NotificationInterval = "off"
-                //        });
-                //        await _db.SaveChangesAsync();
-                //        await _bot.AnswerCallbackQuery(cb.Id, $"Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
-                //    }
-                //    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "profi", msgId);
-                //}
+                    if (existing != null)
+                    {
+                        _db.ProfiCategories.Remove(existing);
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Отключено");
+                    }
+                    else
+                    {
+                        _db.ProfiCategories.Add(new ProfiCategory
+                        {
+                            UserId = userId,
+                            SearchQuery = "",
+                            Id = catId,
+                            Name = existing.Name,
+                            NotificationInterval = "off"
+                        });
+                        await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, $"Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                    }
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "profi", msgId);
+                }
 
                 else if (data == "workspace_menu")
                     await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);

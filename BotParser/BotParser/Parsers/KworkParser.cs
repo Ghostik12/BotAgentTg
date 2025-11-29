@@ -72,14 +72,6 @@ namespace BotParser.Parsers
                         long.TryParse(match.Groups[1].Value, out projectId);
                     }
 
-                    // Просмотрено? (проверяем стиль и текст)
-                    //var viewedBlock = card.SelectSingleNode(".//div[contains(@class, 'want-card__mark-viewed')]");
-                    //var alreadyViewed = viewedBlock != null &&
-                    //                    !viewedBlock.GetAttributeValue("style", "").Contains("display: none") &&
-                    //                    viewedBlock.InnerText.Contains("ПРОСМОТРЕНО");
-
-                    //if (alreadyViewed) continue;
-
                     // Описание (только видимая часть)
                     var descNode = card.SelectSingleNode(".//div[contains(@class, 'wants-card__description-text')]//div[contains(@class, 'overflow-hidden')]//div[contains(@class, 'breakwords')]");
                     var description = descNode != null

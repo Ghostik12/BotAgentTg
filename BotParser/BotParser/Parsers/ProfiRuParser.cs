@@ -1,14 +1,7 @@
-﻿using BotParser.Models;
-using HtmlAgilityPack;
-using Microsoft.AspNetCore.Mvc.RazorPages;
+﻿using HtmlAgilityPack;
 using Microsoft.Extensions.Configuration;
 using PuppeteerSharp;
-using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Web;
 
 namespace BotParser.Parsers
 {
@@ -88,7 +81,7 @@ namespace BotParser.Parsers
 
             var cards = doc.DocumentNode.SelectNodes("//a[contains(@href, '/backoffice/order/') or contains(@data-testid, '_order-snippet')]") ?? new HtmlNodeCollection(null);
 
-            foreach (var card in cards.Take(30))
+            foreach (var card in cards.Take(10))
             {
                 try
                 {
@@ -101,7 +94,8 @@ namespace BotParser.Parsers
                     var title = titleNode?.InnerText.Trim() ?? "Без названия";
 
                     var budgetNode = card.SelectSingleNode(".//span[contains(text(), '₽')] | .//div[contains(@class, 'price')]");
-                    var budget = budgetNode?.InnerText.Trim() ?? "Не указан";
+                    var rawBudget = budgetNode?.InnerText.Trim() ?? "Не указан";
+                    var budget = CleanProfiBudget(rawBudget);
 
                     var descNode = card.SelectSingleNode(".//p[contains(@class, 'description') or contains(@class, 'text')] | .//div[contains(@class, 'order-snippet')]//p");
                     var description = descNode?.InnerText.Trim() ?? "";
@@ -120,6 +114,44 @@ namespace BotParser.Parsers
             }
 
             return orders;
+        }
+
+        private static string CleanProfiBudget(string rawText)
+        {
+            if (string.IsNullOrWhiteSpace(rawText))
+                return "Не указан";
+
+            // Убираем слово false и всё, что после него
+            var falseIndex = rawText.IndexOf("false", StringComparison.OrdinalIgnoreCase);
+            if (falseIndex >= 0)
+                rawText = rawText.Substring(0, falseIndex);
+
+            // Ищем рубли и берём всё до и после них — это и есть бюджет
+            var rubIndex = rawText.IndexOf('₽');
+            if (rubIndex == -1)
+                return "Не указан";
+
+            // Берём ±30 символов вокруг рубля — там точно бюджет
+            var start = Math.Max(0, rubIndex - 30);
+            var end = Math.Min(rawText.Length, rubIndex + 10);
+            var budgetPart = rawText.Substring(start, end - start);
+
+            // Чистим от переносов, табов, лишних пробелов
+            var clean = Regex.Replace(budgetPart, @"\s+", " ").Trim();
+
+            // Убираем лишние слова типа "Бюджет:", "от", "до" — оставляем только суть
+            clean = Regex.Replace(clean, @"^(Бюджет[:\s]*|от\s+|до\s+)", "", RegexOptions.IgnoreCase);
+
+            // Если остались только цифры и рубль — ок
+            if (Regex.IsMatch(clean, @"^\d{1,3}(\s\d{3})*\s*₽$"))
+                return clean.Trim();
+
+            // Финальная чистка — оставляем только то, где есть рубль
+            var match = Regex.Match(rawText, @"(от|до)?\s*[\d\s]+₽");
+            if (match.Success)
+                return Regex.Replace(match.Value, @"\s+", " ").Trim();
+
+            return "Не указан";
         }
     }
 }

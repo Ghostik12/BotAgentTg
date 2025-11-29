@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Telegram.Bot;
+using Serilog;
 
 
 namespace BotParser
@@ -14,6 +15,24 @@ namespace BotParser
         static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
+            if (!Directory.Exists(logPath))
+                Directory.CreateDirectory(logPath);
+
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.Console()
+                .WriteTo.File(
+                    path: "logs/bot-.log",
+                    rollingInterval: RollingInterval.Day,
+                    fileSizeLimitBytes: 10_485_760, // 10 МБ
+                    retainedFileCountLimit: 31,
+                    outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {Message:lj}{NewLine}{Exception}"
+                )
+                .CreateLogger();
+
+            builder.Host.UseSerilog();
 
             // Telegram Bot
             builder.Services.AddHostedService<BotService>();
@@ -27,7 +46,7 @@ namespace BotParser
                 client.DefaultRequestHeaders.Add("Referer", "https://youdo.com/tasks");
             });
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-                new TelegramBotClient("8565915816:AAFeCJoTB0nwKyLD0z_ruoggkUBrWOvx"));
+                new TelegramBotClient("8565915816:AAFeCJoTB0nwKyLD0z_ruoggkUBrWOvxplY"));
 
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>
@@ -52,7 +71,19 @@ namespace BotParser
                 db.Database.EnsureCreated();
             }
 
-            app.Run();
+            try
+            {
+                Log.Information("Бот запускается...");
+                app.Run();
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "Бот упал при старте");
+            }
+            finally
+            {
+                Log.CloseAndFlush();
+            }
         }
     }
 }

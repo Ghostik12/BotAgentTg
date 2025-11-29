@@ -1,11 +1,8 @@
 ﻿using BotParser.Db;
-using BotParser.Models;
 using BotParser.Parsers;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using System.Net;
 using Telegram.Bot;
-using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -138,18 +135,6 @@ namespace BotParser.Services
             { 12, "videoproduction" }
         };
 
-        public static readonly Dictionary<int, string> ProfiQueries = new()
-        {
-            { 1, "разработка сайтов" },
-            { 2, "мобильные приложения" },
-            { 3, "seo продвижение" },
-            { 4, "контекстная реклама яндекс директ google ads" },
-            { 5, "smm таргет реклама вконтакте инстаграм" },
-            { 6, "дизайн логотип фирменный стиль" },
-            { 7, "копирайтинг тексты" },
-            { 8, "программирование бот crm 1c битрикс" }
-        };
-
         public FreelanceService(ITelegramBotClient bot, KworkBotDbContext db, KworkParser kworkParser, FlParser flParser)
         {
             _bot = bot;
@@ -199,6 +184,7 @@ namespace BotParser.Services
         public async Task ShowProfiMenu(long chatId, long userId, int? messageId = null)
         {
             var subs = await _db.ProfiCategories.Where(c => c.UserId == userId).ToListAsync();
+            var buttons = new List<InlineKeyboardButton[]>();
 
             var text = "<b>Profi.ru — персональный поиск</b>\n\n" +
                        "Ты сам создаёшь запросы — получаешь только нужные заказы.\n\n" +
@@ -207,13 +193,15 @@ namespace BotParser.Services
                        "• telegram бот\n" +
                        "• nuxt vue сайт\n" +
                        "• лендинг за 100к";
-
-            var buttons = new List<InlineKeyboardButton[]>
+            if (subs != null)
             {
-                new[] { InlineKeyboardButton.WithCallbackData("Добавить свой поиск", "profi_add_custom") },
-                new[] { InlineKeyboardButton.WithCallbackData("Настроить интервалы", "edit_interval_profi") },
-                new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") }
-            };
+                foreach(var sub in subs)
+                    buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{sub.Name}", $"profi_cat_{sub.Id}") });
+            }
+
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Добавить свой поиск", "profi_add_custom") });
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Настроить интервалы", "edit_interval_profi") });
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
             var markup = new InlineKeyboardMarkup(buttons);
 
@@ -250,31 +238,6 @@ namespace BotParser.Services
                 await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
         }
 
-        public async Task ToggleKworkCategory(long userId, int catId, long chatId, string mId)
-        {
-            var existing = await _db.KworkCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId);
-            if (existing != null)
-            {
-                _db.KworkCategories.Remove(existing);
-                await _db.SaveChangesAsync();
-                await _bot.AnswerCallbackQuery(mId, "Отключено");
-            }
-            else
-            {
-                _db.KworkCategories.Add(new KworkCategory
-                {
-                    UserId = userId,
-                    CategoryId = catId,
-                    Name = KworkCategories[catId],
-                    NotificationInterval = "off"
-                });
-                await _db.SaveChangesAsync();
-                await _bot.AnswerCallbackQuery(mId, "Включено");
-            }
-
-            await ShowKworkMenu(chatId, userId);
-        }
-
         // ─────────────────────── МЕНЮ FL.RU ───────────────────────
         public async Task ShowFlMenu(long chatId, long userId, int? messageId = null)
         {
@@ -300,31 +263,6 @@ namespace BotParser.Services
                 await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: markup);
             else
                 await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
-        }
-
-        public async Task ToggleFlCategory(long userId, int catId, long chatId, string mId)
-        {
-            var existing = await _db.FlCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId);
-            if (existing != null)
-            {
-                _db.FlCategories.Remove(existing);
-                await _db.SaveChangesAsync();
-                await _bot.AnswerCallbackQuery(mId, "Отключено");
-            }
-            else
-            {
-                _db.FlCategories.Add(new FlCategory
-                {
-                    UserId = userId,
-                    CategoryId = catId,
-                    Name = FlCategories[catId],
-                    NotificationInterval = "off"
-                });
-                await _db.SaveChangesAsync();
-                await _bot.AnswerCallbackQuery(mId, "Включено");
-            }
-
-            await ShowFlMenu(chatId, userId);
         }
 
         // ─────────────────────── МОИ ПОДПИСКИ ───────────────────────
@@ -463,13 +401,11 @@ namespace BotParser.Services
 
         public async Task SendProfiOrderAsync(long chatId, ProfiRuParser.ProfiOrder order, int catId)
         {
-            var catName = _db.ProfiCategories.Where(c => c.UserId == chatId).Select(c => c.Name).ToString();
+            var catName = _db.ProfiCategories.Where(c => c.UserId == chatId).Select(c => c.Name).ToArray();
 
-            var text = $"<b>Profi.ru — {catName}</b>\n\n" +
+            var text = $"<b>Profi.ru — {catName[0]}</b>\n\n" +
                        $"<b>{order.Title}</b>\n" +
                        $"Бюджет: <b>{order.Budget}</b>\n" +
-                       $"Город: {order.City}\n" +
-                       $"Опубликован: {order.Published}\n\n" +
                        $"{order.Description}\n\n" +
                        $"<a href=\"{order.Url}\">Перейти к заказу</a>";
 

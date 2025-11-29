@@ -54,7 +54,7 @@ namespace BotParser.Parsers
             var cards = doc.DocumentNode.SelectNodes("//div[contains(@class, 'vacancies__card') and contains(@class, '_tender')]");
             if (cards == null) return orders;
 
-            foreach (var card in cards)
+            foreach (var card in cards.Take(10))
             {
                 try
                 {

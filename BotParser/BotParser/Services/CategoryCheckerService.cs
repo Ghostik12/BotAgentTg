@@ -40,10 +40,12 @@ namespace BotParser.Services
                 }
                 catch (Exception ex)
                 {
-                    _log.LogError(ex, "Критическая ошибка в CategoryCheckerService");
+                    _log.LogError(ex,
+                    "КРИТИЧЕСКАЯ ОШИБКА в CategoryCheckerService | Время: {Time} | Стек: {StackTrace}",
+                    DateTime.Now, ex.StackTrace);
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(22), ct);
+                await Task.Delay(TimeSpan.FromSeconds(60), ct);
             }
         }
 
@@ -61,12 +63,14 @@ namespace BotParser.Services
             foreach (var sub in subs)
             {
                 var key = $"profi_{sub.UserId}_{sub.Id}";
-                if (_lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue).AddMinutes(1) > DateTime.UtcNow)
-                    continue;
+                var minutes = IntervalToMinutes(sub.NotificationInterval);
+                if (minutes <= 0) continue;
+                if ((DateTime.UtcNow - _lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue)).TotalMinutes < minutes) continue;
 
                 // Берём запрос из словаря по CategoryId
-                var query = FreelanceService.ProfiQueries[sub.Id]; // у тебя должен быть такой словарь
-                var orders = await parser.GetOrdersAsync(query);
+                //var query = FreelanceService.ProfiQueries[sub.Id]; // у тебя должен быть такой словарь
+                var query = db.ProfiCategories.Where(c => c.Id == sub.Id).Select(c => c.SearchQuery).ToArray();
+                var orders = await parser.GetOrdersAsync(query[0]);
 
                 var sentIds = await db.SentProfiOrders
                     .Where(s => s.UserTelegramId == sub.UserId)
@@ -87,10 +91,12 @@ namespace BotParser.Services
 
                     await freelance.SendProfiOrderAsync(sub.UserId, order, sub.Id);
 
-                    db.SentProfiOrders.Add(new SentProfiOrder
+                    await db.SentProfiOrders.AddAsync(new SentProfiOrder
                     {
                         OrderId = order.OrderId,
-                        UserTelegramId = sub.UserId
+                        UserTelegramId = sub.UserId,
+                        SentAt = DateTime.UtcNow,
+                        
                     });
 
                     await Task.Delay(600, ct);
@@ -145,10 +151,11 @@ namespace BotParser.Services
                     // 3. Отправляем!
                     await _freelance.SendWsOrderAsync(sub.UserId, tender);
 
-                    db.SentWsOrders.Add(new SentWsOrder
+                    await db.SentWsOrders.AddAsync(new SentWsOrder
                     {
                         TenderId = tender.TenderId,
-                        UserTelegramId = sub.UserId
+                        UserTelegramId = sub.UserId,
+                        SentAt = DateTime.UtcNow,
                     });
 
                     await Task.Delay(1000, ct);
@@ -206,7 +213,7 @@ namespace BotParser.Services
                         // 3. Отправляем!
                         await _freelance.SendFrOrderAsync(sub.UserId, tender);
 
-                        db.SentFrOrders.Add(new SentFrOrder
+                        await db.SentFrOrders.AddAsync(new SentFrOrder
                         {
                             ProjectId = tender.ProjectId,
                             UserTelegramId = sub.UserId
@@ -273,7 +280,7 @@ namespace BotParser.Services
                         // 3. Отправляем!
                         await _freelance.SendYoudoOrderAsync(sub.UserId, tender);
 
-                        db.SentYoudoOrders.Add(new SentYoudoOrder
+                        await db.SentYoudoOrders.AddAsync(new SentYoudoOrder
                         {
                             TaskId = tender.TaskId,
                             UserTelegramId = sub.UserId
@@ -338,7 +345,7 @@ namespace BotParser.Services
                         // 3. Отправляем!
                         await _freelance.SendKworkOrderAsync(sub.UserId, tender);
 
-                        db.SentOrders.Add(new SentOrder
+                        await db.SentOrders.AddAsync(new SentOrder
                         {
                             ProjectId = tender.ProjectId,
                             UserTelegramId = sub.UserId
@@ -405,7 +412,7 @@ namespace BotParser.Services
                         // 3. Отправляем!
                         await _freelance.SendFlOrderAsync(sub.UserId, tender);
 
-                        db.SentFlOrders.Add(new SentFlOrder
+                        await db.SentFlOrders.AddAsync(new SentFlOrder
                         {
                             ProjectId = tender.ProjectId,
                             UserTelegramId = sub.UserId
