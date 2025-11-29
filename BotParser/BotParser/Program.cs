@@ -50,7 +50,7 @@ namespace BotParser
 
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>
-                options.UseSqlite("Data Source=kworkbot13.db"));
+                options.UseSqlite("Data Source=kworkbot17.db"));
 
             // Сервисы
             builder.Services.AddScoped<FreelanceService>();

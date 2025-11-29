@@ -189,7 +189,7 @@ namespace BotParser
                     else
                     {
                         // Новая подписка — создаём с интервалом по умолчанию "instant"
-                        _db.KworkCategories.Add(new KworkCategory
+                        await _db.KworkCategories.AddAsync(new KworkCategory
                         {
                             UserId = userId,
                             CategoryId = catId,
@@ -198,7 +198,7 @@ namespace BotParser
                         });
                         await _db.SaveChangesAsync();
 
-                        await _bot.AnswerCallbackQuery(cb.Id, "ППодписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
 
                         await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "kwork", msgId);
                     }
@@ -220,7 +220,7 @@ namespace BotParser
                     }
                     else
                     {
-                        _db.FlCategories.Add(new FlCategory
+                        await _db.FlCategories.AddAsync(new FlCategory
                         {
                             UserId = userId,
                             CategoryId = catId,
@@ -312,7 +312,7 @@ namespace BotParser
                     }
                     else
                     {
-                        _db.YoudoCategories.Add(new YoudoCategory
+                        await _db.YoudoCategories.AddAsync(new YoudoCategory
                         {
                             UserId = userId,
                             CategoryId = catId,
@@ -370,7 +370,7 @@ namespace BotParser
                     }
                     else
                     {
-                        _db.ProfiCategories.Add(new ProfiCategory
+                        await _db.ProfiCategories.AddAsync(new ProfiCategory
                         {
                             UserId = userId,
                             SearchQuery = "",
@@ -405,7 +405,7 @@ namespace BotParser
                     }
                     else
                     {
-                        _db.WorkspaceCategories.Add(new WorkspaceCategory
+                        await _db.WorkspaceCategories.AddAsync(new WorkspaceCategory
                         {
                             UserId = userId,
                             CategorySlug = slug,

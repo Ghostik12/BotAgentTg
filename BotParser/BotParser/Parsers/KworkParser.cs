@@ -27,7 +27,20 @@ namespace BotParser.Parsers
 
             // Запускаем headless Chrome
             await new BrowserFetcher().DownloadAsync();
-            using var browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true });
+            await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+            {
+                Headless = true,
+                Args = new[]
+    {
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-zygote",
+        "--single-process"
+    }
+                // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
+            });
             using var page = await browser.NewPageAsync();
 
             // Настраиваем браузер как реальный юзер

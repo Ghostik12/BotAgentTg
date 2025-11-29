@@ -101,10 +101,21 @@ namespace BotParser.Db
             modelBuilder.Entity<ProfiCategory>(e =>
             {
                 e.HasKey(x => x.Id);
+
+                e.Property(x => x.UserId).IsRequired();
+
                 e.Property(x => x.SearchQuery).HasMaxLength(200).IsRequired();
                 e.Property(x => x.Name).HasMaxLength(100).IsRequired();
-                e.Property(x => x.NotificationInterval).HasMaxLength(20).HasDefaultValue("off");
+                e.Property(x => x.NotificationInterval)
+                    .HasMaxLength(20)
+                    .HasDefaultValue("off");
+
                 e.HasIndex(x => new { x.UserId, x.SearchQuery }).IsUnique();
+
+                e.HasOne<User>()
+                    .WithMany()
+                    .HasForeignKey(x => x.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<SentProfiOrder>(e =>

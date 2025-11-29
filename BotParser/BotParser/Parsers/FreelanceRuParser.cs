@@ -26,7 +26,16 @@ namespace BotParser.Parsers
             await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
             {
                 Headless = true,
-                Args = new[] { "--no-sandbox", "--disable-setuid-sandbox" }
+                Args = new[]
+    {
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-zygote",
+        "--single-process"
+    }
+                // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
             });
 
             await using var page = await browser.NewPageAsync();

@@ -12,7 +12,7 @@ namespace BotParser.Models
         public int CategoryId { get; set; } // ID на kwork.ru
         public string Name { get; set; } = null!;
         public long UserId { get; set; }
-        public User User { get; set; } = null!;
+        public User? User { get; set; }
         public string NotificationInterval { get; set; } = "off";
     }
 }

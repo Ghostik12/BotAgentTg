@@ -31,7 +31,20 @@ namespace BotParser.Parsers
             var orders = new List<ProfiOrder>();
 
             await new BrowserFetcher().DownloadAsync();
-            await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true });
+            await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+            {
+                Headless = true,
+                Args = new[]
+    {
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-zygote",
+        "--single-process"
+    }
+                // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
+            });
             await using var page = await browser.NewPageAsync();
 
             await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
