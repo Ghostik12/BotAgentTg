@@ -46,7 +46,7 @@ namespace BotParser
                 client.DefaultRequestHeaders.Add("Referer", "https://youdo.com/tasks");
             });
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-                new TelegramBotClient("8565915816:AAFeCJoTB0nwKyLD0z_ruoggkUBrWOvx"));
+                new TelegramBotClient("7972227901:AAHl-W2-Z54gHfeg_QtzrZ1PFKcK7H3w"));
 
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>

@@ -40,10 +40,13 @@ namespace BotParser
     {
             if (update.Message?.Text == "/start")
             {
-                await _freelance.ShowMainMenu(update.Message.Chat.Id);
+                await _freelance.EnableMenuButton(update.Message.Chat.Id);
                 await _freelance.EnsureUserExists(update.Message.Chat.Id, update.Message.Chat.Username);
                 return;
             }
+
+            if(update.Message?.Text == "/menu")
+                await _freelance.ShowMainMenu(update.Message.Chat.Id);
 
             if (update.Message?.Chat.Id != null)
             {
@@ -64,10 +67,9 @@ namespace BotParser
                         UserId = userIds,
                         SearchQuery = queryText.ToLower(),
                         Name = queryText.Length > 35 ? queryText.Substring(0, 32) + "..." : queryText,
-                        NotificationInterval = "10m"
+                        NotificationInterval = "off"
                     };
 
-                    // ← ИСПРАВЛЕНО: обычный using, а не await using
                     using var scope = _sp.CreateScope();
                     var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
 
@@ -79,8 +81,7 @@ namespace BotParser
                     await bot.SendMessage(userIds,
                         $"<b>Готово!</b>\n\n" +
                         $"Запрос: <code>{queryText}</code>\n" +
-                        $"Интервал: каждые 10 минут\n\n" +
-                        $"Заказы уже идут!",
+                        $"Интервал: Выключен\n\n",
                         ParseMode.Html,
                         replyMarkup: new InlineKeyboardMarkup(new[]
                         {
@@ -180,8 +181,11 @@ namespace BotParser
 
                     if (existing != null)
                     {
-                        // Была подписка — отключаем
+                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
                         _db.KworkCategories.Remove(existing);
+                        if (keywords != null)
+                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
                         await _freelance.ShowKworkMenu(chatId, userId, msgId);
@@ -213,7 +217,11 @@ namespace BotParser
 
                     if (existing != null)
                     {
+                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
                         _db.FlCategories.Remove(existing);
+                        if (keywords != null)
+                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
                         await _freelance.ShowFlMenu(chatId, userId, msgId);
@@ -296,7 +304,10 @@ namespace BotParser
                 }
 
                 else if (data == "youdo_menu")
+                {
+
                     await _freelance.ShowYoudoMenu(chatId, userId, msgId);
+                }
 
                 else if (data.StartsWith("youdo_cat_"))
                 {
@@ -306,9 +317,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
+                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
                         _db.YoudoCategories.Remove(existing);
+                        if (keywords != null)
+                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
+                        await _freelance.ShowYoudoMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -321,10 +337,8 @@ namespace BotParser
                         });
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "youdo", msgId);
                     }
-
-                    // ← Только обновляем меню YouDo, без прыжка в интервалы
-                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "youdo", msgId);
                 }
 
                 else if (data.StartsWith("fr_cat_"))
@@ -335,9 +349,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
+                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
                         _db.FrCategories.Remove(existing);
+                        if (keywords != null)
+                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
+                        await _freelance.ShowFrMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -351,8 +370,6 @@ namespace BotParser
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
                     }
-
-                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fr", msgId);
                 }
 
                 else if (data.StartsWith("profi_cat_"))
@@ -364,9 +381,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
+                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
                         _db.ProfiCategories.Remove(existing);
+                        if (keywords != null)
+                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Отключено");
+                        await _freelance.ShowProfiMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -380,28 +402,33 @@ namespace BotParser
                         });
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, $"Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "profi", msgId);
                     }
-                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "profi", msgId);
                 }
 
                 else if (data == "workspace_menu")
                     await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
-                
+
                 else if (data == "profi_menu")
                     await _freelance.ShowProfiMenu(chatId, userId, msgId);
 
                 else if (data.StartsWith("ws_cat_"))
                 {
-                    var slug = int.Parse( data["ws_cat_".Length..]);
+                    var slug = int.Parse(data["ws_cat_".Length..]);
                     var name = FreelanceService.WsCategories.GetValueOrDefault(slug, "Неизвестно");
                     var existing = await _db.WorkspaceCategories
                         .FirstOrDefaultAsync(c => c.UserId == userId && c.CategorySlug == slug);
 
                     if (existing != null)
                     {
+                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == slug);
                         _db.WorkspaceCategories.Remove(existing);
+                        if (keywords != null)
+                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
+                        await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -414,9 +441,8 @@ namespace BotParser
                         });
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                        await _freelance.ShowIntervalSelection(chatId, userId, slug, platform: "ws", msgId);
                     }
-                    var catId = int.Parse(data["ws_cat_".Length..]);
-                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "ws", msgId);
                 }
 
                 else if (data.StartsWith("set_keywords_"))
@@ -435,31 +461,52 @@ namespace BotParser
                         "fr" => "freelance",
                         "kwork" => "kwork",
                         "youdo" => "youdo",
+                        "profi" => "profi",
                         _ => throw new Exception("Неизвестная платформа")
                     };
 
-                    // Получаем название рубрики
-                    string categoryName = platform switch
+                    if (platform != "profi")
                     {
-                        "workspace" => FreelanceService.WsCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "fl" => FreelanceService.FlCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "freelance" => FreelanceService.FrCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "kwork" => FreelanceService.KworkCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "youdo" => FreelanceService.YoudoCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        _ => "Неизвестно"
-                    };
 
-                    // Сохраняем состояние
-                    WaitingForKeywords[chatId] = (platform, catId);
+                        // Получаем название рубрики
+                        string categoryName = platform switch
+                        {
+                            "workspace" => FreelanceService.WsCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "fl" => FreelanceService.FlCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "freelance" => FreelanceService.FrCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "kwork" => FreelanceService.KworkCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "youdo" => FreelanceService.YoudoCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            _ => "Неизвестно"
+                        };
 
-                    // Красивое сообщение
-                    await _bot.SendMessage(chatId,
-                        $"<b>Фильтр по словам</b>\n\n" +
-                        $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
-                        $"Рубрика: <b>{categoryName}</b>\n\n" +
-                        $"Отправь слова через запятую:\n" +
-                        $"Например: битрикс, laravel, под ключ, telegram bot",
-                        ParseMode.Html);
+                        // Сохраняем состояние
+                        WaitingForKeywords[chatId] = (platform, catId);
+
+                        // Красивое сообщение
+                        await _bot.SendMessage(chatId,
+                            $"<b>Фильтр по словам</b>\n\n" +
+                            $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
+                            $"Рубрика: <b>{categoryName}</b>\n\n" +
+                            $"Отправь слова через запятую:\n" +
+                            $"Например: битрикс, laravel, под ключ, telegram bot",
+                            ParseMode.Html);
+                    }
+                    else
+                    {
+                        var categoryName = await _db.ProfiCategories.Where(c => c.Id == catId).FirstOrDefaultAsync();
+
+                        // Сохраняем состояние
+                        WaitingForKeywords[chatId] = (platform, catId);
+
+                        // Красивое сообщение
+                        await _bot.SendMessage(chatId,
+                            $"<b>Фильтр по словам</b>\n\n" +
+                            $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
+                            $"Рубрика: <b>{categoryName.Name}</b>\n\n" +
+                            $"Отправь слова через запятую:\n" +
+                            $"Например: битрикс, laravel, под ключ, telegram bot",
+                            ParseMode.Html);
+                    }
                 }
 
                 else if (data?.StartsWith("clear_keywords_") == true)
@@ -480,42 +527,71 @@ namespace BotParser
                         _ => throw new Exception("Неизвестная платформа")
                     };
 
-                    // Получаем название рубрики для красивого ответа
-                    string categoryName = platform switch
+                    if (platform != "profi")
                     {
-                        "workspace" => FreelanceService.WsCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "fl" => FreelanceService.FlCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "freelance" => FreelanceService.FrCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "kwork" => FreelanceService.KworkCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        "youdo" => FreelanceService.YoudoCategories.GetValueOrDefault(catId, "Неизвестно"),
-                        _ => "Неизвестно"
-                    };
+                        // Получаем название рубрики для красивого ответа
+                        string categoryName = platform switch
+                        {
+                            "workspace" => FreelanceService.WsCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "fl" => FreelanceService.FlCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "freelance" => FreelanceService.FrCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "kwork" => FreelanceService.KworkCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            "youdo" => FreelanceService.YoudoCategories.GetValueOrDefault(catId, "Неизвестно"),
+                            _ => "Неизвестно"
+                        };
 
-                    // УДАЛЯЕМ ВСЕ слова для этой рубрики у этого пользователя
-                    var keywordsToDelete = await _db.UserKeywordFilters
-                        .Where(k => k.UserId == userId && k.Platform == platform && k.CategoryId == catId)
-                        .ToListAsync();
+                        // УДАЛЯЕМ ВСЕ слова для этой рубрики у этого пользователя
+                        var keywordsToDelete = await _db.UserKeywordFilters
+                            .Where(k => k.UserId == userId && k.Platform == platform && k.CategoryId == catId)
+                            .ToListAsync();
 
-                    if (keywordsToDelete.Any())
-                    {
-                        _db.UserKeywordFilters.RemoveRange(keywordsToDelete);
-                        await _db.SaveChangesAsync();
+                        if (keywordsToDelete.Any())
+                        {
+                            _db.UserKeywordFilters.RemoveRange(keywordsToDelete);
+                            await _db.SaveChangesAsync();
 
-                        await _bot.AnswerCallbackQuery(cb.Id, "Фильтр удалён!");
-                        await _bot.SendMessage(chatId,
-                            $"<b>Фильтр по словам удалён</b>\n\n" +
-                            $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
-                            $"Рубрика: <b>{categoryName}</b>\n\n" +
-                            $"Теперь будут приходить все заказы из этой рубрики.",
-                            ParseMode.Html);
+                            await _bot.AnswerCallbackQuery(cb.Id, "Фильтр удалён!");
+                            await _bot.SendMessage(chatId,
+                                $"<b>Фильтр по словам удалён</b>\n\n" +
+                                $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
+                                $"Рубрика: <b>{categoryName}</b>\n\n" +
+                                $"Теперь будут приходить все заказы из этой рубрики.",
+                                ParseMode.Html);
+                        }
+                        else
+                        {
+                            await _bot.AnswerCallbackQuery(cb.Id, "Фильтр и так пустой");
+                        }
                     }
                     else
                     {
-                        await _bot.AnswerCallbackQuery(cb.Id, "Фильтр и так пустой");
-                    }
+                        // Получаем название рубрики для красивого ответа
+                        var categoryName = _db.ProfiCategories.Where(c => c.Id == catId).FirstOrDefault();
 
-                    // Обновляем меню (если нужно)
-                    //await ShowWorkspaceMenu(chatId, userId, messageId); // или нужное меню
+                        // УДАЛЯЕМ ВСЕ слова для этой рубрики у этого пользователя
+                        var keywordsToDelete = await _db.UserKeywordFilters
+                            .Where(k => k.UserId == userId && k.Platform == platform && k.CategoryId == catId)
+                            .ToListAsync();
+
+                        if (keywordsToDelete.Any())
+                        {
+                            _db.UserKeywordFilters.RemoveRange(keywordsToDelete);
+                            await _db.SaveChangesAsync();
+
+                            await _bot.AnswerCallbackQuery(cb.Id, "Фильтр удалён!");
+                            await _bot.SendMessage(chatId,
+                                $"<b>Фильтр по словам удалён</b>\n\n" +
+                                $"Платформа: <b>{GetPlatformName(platformShort)}</b>\n" +
+                                $"Рубрика: <b>{categoryName.Name}</b>\n\n" +
+                                $"Теперь будут приходить все заказы из этой рубрики.",
+                                ParseMode.Html);
+                        }
+                        else
+                        {
+                            await _bot.AnswerCallbackQuery(cb.Id, "Фильтр и так пустой");
+                        }
+
+                    }
                 }
             }
             catch (Exception ex)
