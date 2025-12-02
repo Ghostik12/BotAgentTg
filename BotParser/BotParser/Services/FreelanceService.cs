@@ -222,10 +222,22 @@ namespace BotParser.Services
             foreach (var kvp in KworkCategories)
             {
                 var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
-                var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
-                    : "❌";
-                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"kwork_cat_{kvp.Key}") });
+
+                string status;
+                if (sub == null)
+                    status = "❌ OFF";
+                else if (sub.NotificationInterval == "off")
+                    status = "❌ OFF";
+                else
+                {
+                    var full = $"✅ {GetPrettyInterval(sub.NotificationInterval)}";
+                    status = full.Length > 10 ? full.Substring(0, 8) + ".." : full;
+                }
+
+                buttons.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"kwork_cat_{kvp.Key}")
+        });
             }
 
             // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
@@ -619,7 +631,8 @@ namespace BotParser.Services
           InlineKeyboardButton.WithCallbackData("Выключить", $"{prefix}_setint_{categoryId}_off") },
         new[] { InlineKeyboardButton.WithCallbackData("Фильтр по словам", $"set_keywords_{prefix}_{categoryId}") ,
           InlineKeyboardButton.WithCallbackData("Удалить фильтр", $"clear_keywords_{prefix}_{categoryId}") },
-        new[] { InlineKeyboardButton.WithCallbackData("Назад в подписки", "my_subscriptions") }
+        new[] { InlineKeyboardButton.WithCallbackData("Мои подписки", "my_subscriptions"),
+        InlineKeyboardButton.WithCallbackData("Назад", $"show_{platform}_categories") }
     };
 
                 var text = $"<b>Настройка уведомлений ({platform.ToUpper()})</b>\n\n" +
@@ -652,7 +665,8 @@ namespace BotParser.Services
           InlineKeyboardButton.WithCallbackData("Выключить", $"{prefix}_setint_{categoryId}_off") },
         new[] { InlineKeyboardButton.WithCallbackData("Фильтр по словам", $"set_keywords_{prefix}_{categoryId}") ,
           InlineKeyboardButton.WithCallbackData("Удалить фильтр", $"clear_keywords_{prefix}_{categoryId}") },
-        new[] { InlineKeyboardButton.WithCallbackData("Назад в подписки", "my_subscriptions") }
+        new[] { InlineKeyboardButton.WithCallbackData("Мои подписки", "my_subscriptions"),
+        InlineKeyboardButton.WithCallbackData("Назад", $"show_{platform}_categories") }
     };
 
                 var text = $"<b>Настройка уведомлений ({platform.ToUpper()})</b>\n\n" +

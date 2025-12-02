@@ -4,6 +4,7 @@ using BotParser.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -20,13 +21,15 @@ namespace BotParser
         private readonly KworkBotDbContext _db;
         private readonly ConcurrentDictionary<long, (string platform, int categoryId)> WaitingForKeywords = new();
         private readonly ConcurrentDictionary<long, string> WaitingForProfiCustomQuery = new();
+        private readonly ILogger<BotService> _log;
 
-        public BotService(ITelegramBotClient bot, IServiceProvider sp, FreelanceService freelance, KworkBotDbContext db)
+        public BotService(ITelegramBotClient bot, IServiceProvider sp, FreelanceService freelance, KworkBotDbContext db, ILogger<BotService> log)
         {
-        _bot = bot;
-        _sp = sp;
-        _db = db;
-        _freelance = freelance;
+            _bot = bot;
+            _sp = sp;
+            _db = db;
+            _freelance = freelance;
+            _log = log;
         }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -301,6 +304,36 @@ namespace BotParser
                     await _freelance.SetNotificationInterval(userId, catId, interval, platform);
                     await _bot.AnswerCallbackQuery(cb.Id, $"Интервал: {GetPrettyInterval(interval)}");
                     //await _freelance.ShowMainMenu(chatId);
+                }
+
+                else if (data.StartsWith("show_") && data.EndsWith("_categories"))
+                {
+                    var platform = data["show_".Length..^"_categories".Length]; // kwork, fl, youdo и т.д.
+
+                    switch (platform)
+                    {
+                        case "kwork":
+                            await _freelance.ShowKworkMenu(chatId, userId, msgId);
+                            break;
+                        case "fl":
+                            await _freelance.ShowFlMenu(chatId, userId, msgId);
+                            break;
+                        case "youdo":
+                            await _freelance.ShowYoudoMenu(chatId, userId, msgId);
+                            break;
+                        case "fr":
+                            await _freelance.ShowFrMenu(chatId, userId, msgId);
+                            break;
+                        case "ws":
+                            await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
+                            break;
+                        case "profi":
+                            await _freelance.ShowProfiMenu(chatId, userId, msgId);
+                            break;
+                        default:
+                            await _freelance.ShowMainMenu(chatId, msgId);
+                            break;
+                    }
                 }
 
                 else if (data == "youdo_menu")
@@ -596,10 +629,27 @@ namespace BotParser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Ошибка в callback: {ex.Message}");
-                await _bot.AnswerCallbackQuery(cb.Id, "Произошла ошибка");
+                _log.LogError(ex,
+                    "ОШИБКА В CALLBACK | " +
+                    "Пользователь: {UserId} ({Username}) | " +
+                    "ChatId: {ChatId} | " +
+                    "CallbackData: {CallbackData} | " +
+                    "Сообщение ID: {MessageId} | " +
+                    "Время: {Time}",
+                    userId,
+                    username ?? "без username",
+                    chatId,
+                    data ?? "null",
+                    msgId,
+                    DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"));
+
+                try
+                {
+                    await _bot.AnswerCallbackQuery(cb.Id, "Произошла ошибка, попробуй ещё раз");
+                }
+                catch { /* игнорируем, если не удалось */ }
             }
-    }
+        }
 
         private static string GetPlatformName(string shortName) => shortName switch
         {
