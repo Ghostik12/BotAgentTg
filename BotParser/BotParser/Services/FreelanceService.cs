@@ -182,6 +182,7 @@ namespace BotParser.Services
                 await _bot.SendMessage(chatId, text, replyMarkup: markup);
         }
 
+        // ─────────────────────── МЕНЮ PROFI ───────────────────────
         public async Task ShowProfiMenu(long chatId, long userId, int? messageId = null)
         {
             var subs = await _db.ProfiCategories.Where(c => c.UserId == userId).ToListAsync();
@@ -196,12 +197,14 @@ namespace BotParser.Services
                        "• лендинг за 100к";
             if (subs != null)
             {
-                foreach(var sub in subs)
-                    buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{sub.Name}", $"profi_cat_{sub.Id}") });
+                foreach (var sub in subs)
+                    if (sub.NotificationInterval == "off")
+                        buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"✅ Выкл {sub.Name}", $"profi_cat_{sub.Id}") });
+                    else
+                        buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"✅ {GetPrettyInterval(sub.NotificationInterval)} {sub.Name}", $"profi_cat_{sub.Id}") });
             }
 
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Добавить свой поиск", "profi_add_custom") });
-            //buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Настроить интервалы", "edit_interval_profi") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
             var markup = new InlineKeyboardMarkup(buttons);
@@ -227,7 +230,7 @@ namespace BotParser.Services
                 if (sub == null)
                     status = "❌ OFF";
                 else if (sub.NotificationInterval == "off")
-                    status = "❌ OFF";
+                    status = "✅ Выкл";
                 else
                 {
                     var full = $"✅ {GetPrettyInterval(sub.NotificationInterval)}";
@@ -240,8 +243,6 @@ namespace BotParser.Services
         });
             }
 
-            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
-            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "kwork_set_intervals") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
             var markup = new InlineKeyboardMarkup(buttons.ToArray());
@@ -262,13 +263,11 @@ namespace BotParser.Services
             {
                 var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
                 var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
                     : "❌";
                 buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fl_cat_{kvp.Key}") });
             }
 
-            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
-            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "fl_set_intervals") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
             var markup = new InlineKeyboardMarkup(buttons.ToArray());
@@ -558,13 +557,11 @@ namespace BotParser.Services
             {
                 var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
                 var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
                     : "❌";
                 buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"youdo_cat_{kvp.Key}") });
             }
 
-            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
-            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "youdo_set_intervals") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
             var markup = new InlineKeyboardMarkup(buttons.ToArray());
@@ -632,7 +629,8 @@ namespace BotParser.Services
         new[] { InlineKeyboardButton.WithCallbackData("Фильтр по словам", $"set_keywords_{prefix}_{categoryId}") ,
           InlineKeyboardButton.WithCallbackData("Удалить фильтр", $"clear_keywords_{prefix}_{categoryId}") },
         new[] { InlineKeyboardButton.WithCallbackData("Мои подписки", "my_subscriptions"),
-        InlineKeyboardButton.WithCallbackData("Назад", $"show_{platform}_categories") }
+          InlineKeyboardButton.WithCallbackData("Назад", $"show_{platform}_categories") },
+        new[] { InlineKeyboardButton.WithCallbackData("Удалить подписку", $"delete_{platform}_{categoryId}") }
     };
 
                 var text = $"<b>Настройка уведомлений ({platform.ToUpper()})</b>\n\n" +
@@ -666,7 +664,8 @@ namespace BotParser.Services
         new[] { InlineKeyboardButton.WithCallbackData("Фильтр по словам", $"set_keywords_{prefix}_{categoryId}") ,
           InlineKeyboardButton.WithCallbackData("Удалить фильтр", $"clear_keywords_{prefix}_{categoryId}") },
         new[] { InlineKeyboardButton.WithCallbackData("Мои подписки", "my_subscriptions"),
-        InlineKeyboardButton.WithCallbackData("Назад", $"show_{platform}_categories") }
+          InlineKeyboardButton.WithCallbackData("Назад", $"show_{platform}_categories") },
+        new[] { InlineKeyboardButton.WithCallbackData("Удалить подписку", $"delete_{platform}_{categoryId}") }
     };
 
                 var text = $"<b>Настройка уведомлений ({platform.ToUpper()})</b>\n\n" +
@@ -696,13 +695,11 @@ namespace BotParser.Services
             {
                 var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
                 var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
                     : "❌";
                 buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fr_cat_{kvp.Key}") });
             }
 
-            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
-            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "fr_set_intervals") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
             var markup = new InlineKeyboardMarkup(buttons.ToArray());
@@ -734,13 +731,11 @@ namespace BotParser.Services
             {
                 var sub = subs.FirstOrDefault(s => s.CategorySlug == kvp.Key);
                 var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "❌ OFF" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
+                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
                     : "❌";
                 buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"ws_cat_{kvp.Key}") });
             }
 
-            // ← НОВАЯ КНОПКА ДЛЯ ИНТЕРВАЛОВ
-            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("⚙️ Настроить интервалы", "ws_set_intervals") });
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
             var markup = new InlineKeyboardMarkup(buttons.ToArray());
@@ -775,6 +770,22 @@ namespace BotParser.Services
                 },
                 new BotCommandScopeChat { ChatId = chatId } // только для этого юзера
             );
+        }
+
+        public async Task StartMessage(long chatId)
+        {
+            var text = $"<b>Привет! Это бот для мониторинга фриланс-бирж.</b>\r\n\n" +
+                $"<b>Что ты получаешь:</b>\r\n" +
+                $"Мгновенные уведомления о новых заказах (от 1 минуты)\r\n" +
+                $"Точные фильтры по словам (битрикс, telegram бот, nuxt, лендинг и любые твои)\r\n" +
+                $"Индивидуальные интервалы для каждой категории\r\n\n" +
+                $"<b>Как работать:</b>\r\n" +
+                $"Нажми на Menu или напиши /menu\r\n" +
+                $"Выбери биржу → выбери категории или создай свой поиск\r\n" +
+                $"Настрой интервал и фильтр по словам\r\n" +
+                $"Готово — заказы приходят автоматически";
+
+            await _bot.SendMessage(chatId, text, ParseMode.Html);
         }
     }
 }

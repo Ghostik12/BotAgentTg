@@ -68,7 +68,7 @@ namespace BotParser.Services
                 if ((DateTime.UtcNow - _lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue)).TotalMinutes < minutes) continue;
 
                 // Берём запрос из словаря по CategoryId
-                //var query = FreelanceService.ProfiQueries[sub.Id]; // у тебя должен быть такой словарь
+                //var query = FreelanceService.ProfiQueries[sub.Id];
                 var query = db.ProfiCategories.Where(c => c.Id == sub.Id).Select(c => c.SearchQuery).ToArray();
                 var orders = await parser.GetOrdersAsync(query[0]);
 
@@ -84,7 +84,7 @@ namespace BotParser.Services
                     bool matches = await freelance.TitleContainsKeyword(
                         sub.UserId,
                         "profi",
-                        sub.Id,                         // ← теперь правильно: int!
+                        sub.Id,
                         order.Title + " " + order.Description);
 
                     if (!matches) continue;

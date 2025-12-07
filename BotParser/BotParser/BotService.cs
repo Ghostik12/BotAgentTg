@@ -10,6 +10,7 @@ using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using static Microsoft.Extensions.Logging.EventSource.LoggingEventSource;
 
 namespace BotParser
 {
@@ -43,6 +44,7 @@ namespace BotParser
     {
             if (update.Message?.Text == "/start")
             {
+                await _freelance.StartMessage(update.Message.Chat.Id);
                 await _freelance.EnableMenuButton(update.Message.Chat.Id);
                 await _freelance.EnsureUserExists(update.Message.Chat.Id, update.Message.Chat.Username);
                 return;
@@ -59,9 +61,9 @@ namespace BotParser
                 {
                     var queryText = update.Message.Text?.Trim();
 
-                    if (string.IsNullOrEmpty(queryText) || queryText.Length < 2 || queryText.Length > 80)
+                    if (string.IsNullOrEmpty(queryText) || queryText.Length < 2)
                     {
-                        await bot.SendMessage(userIds, "Ошибка: запрос должен быть от 2 до 80 символов.");
+                        await bot.SendMessage(userIds, "Ошибка: запрос должен быть от 2 символов.");
                         return;
                     }
 
@@ -175,6 +177,48 @@ namespace BotParser
                 else if (data == "fr_menu")
                     await _freelance.ShowFrMenu(chatId, userId, msgId);
 
+                else if (data.StartsWith("delete_"))
+                {
+                    var parts = data["delete_".Length..].Split('_');
+                    var platform = parts[0]; // kwork, fl, profi и т.д.
+                    var catId = int.Parse(parts[1]);
+
+                    object? subscription = platform switch
+                    {
+                        "kwork" => await _db.KworkCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId),
+                        "fl" => await _db.FlCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId),
+                        "youdo" => await _db.YoudoCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId),
+                        "fr" => await _db.FrCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategoryId == catId),
+                        "ws" => await _db.WorkspaceCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.CategorySlug == catId),
+                        "profi" => await _db.ProfiCategories.FirstOrDefaultAsync(c => c.UserId == userId && c.Id == catId),
+                        _ => null
+                    };
+
+                    if (subscription != null)
+                    {
+                        _db.Remove(subscription);
+                    }
+
+                    var keywordsToDelete = await _db.UserKeywordFilters
+                        .Where(k => k.UserId == userId &&
+                                    k.Platform == platform &&
+                                    k.CategoryId == catId)
+                        .ToListAsync();
+
+                    if (keywordsToDelete.Any())
+                    {
+                        _db.UserKeywordFilters.RemoveRange(keywordsToDelete);
+                        _log.LogInformation("Удалено {Count} ключевых слов для пользователя {UserId}, платформа {Platform}, категория {CatId}",
+                            keywordsToDelete.Count, userId, platform, catId);
+                    }
+
+                    await _db.SaveChangesAsync();
+
+                    await _bot.AnswerCallbackQuery(cb.Id, "Подписка и фильтр по словам удалены!");
+
+                    await _freelance.ShowMySubscriptions(chatId, userId, msgId);
+                }
+
                 else if (data.StartsWith("kwork_cat_"))
                 {
                     var catId = int.Parse(data["kwork_cat_".Length..]);
@@ -184,14 +228,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
-                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
-                        _db.KworkCategories.Remove(existing);
-                        if (keywords != null)
-                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+                        //var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
+                        //_db.KworkCategories.Remove(existing);
+                        //if (keywords != null)
+                        //    foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
 
-                        await _db.SaveChangesAsync();
-                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
-                        await _freelance.ShowKworkMenu(chatId, userId, msgId);
+                        //await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        //await _freelance.ShowKworkMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -220,14 +264,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
-                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
-                        _db.FlCategories.Remove(existing);
-                        if (keywords != null)
-                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+                        //var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
+                        //_db.FlCategories.Remove(existing);
+                        //if (keywords != null)
+                        //    foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
 
-                        await _db.SaveChangesAsync();
-                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
-                        await _freelance.ShowFlMenu(chatId, userId, msgId);
+                        //await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        //await _freelance.ShowFlMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -248,7 +292,7 @@ namespace BotParser
                 else if (data.StartsWith("edit_interval_kwork_"))
                 {
                     var catId = int.Parse(data["edit_interval_kwork_".Length..]);
-                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform:"kwork", msgId);
+                    await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "kwork", msgId);
                 }
 
                 else if (data.StartsWith("edit_interval_fl_"))
@@ -350,14 +394,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
-                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
-                        _db.YoudoCategories.Remove(existing);
-                        if (keywords != null)
-                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+                        //var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
+                        //_db.YoudoCategories.Remove(existing);
+                        //if (keywords != null)
+                        //    foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
 
-                        await _db.SaveChangesAsync();
-                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
-                        await _freelance.ShowYoudoMenu(chatId, userId, msgId);
+                        //await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        //await _freelance.ShowYoudoMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -382,14 +426,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
-                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
-                        _db.FrCategories.Remove(existing);
-                        if (keywords != null)
-                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+                        //var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
+                        //_db.FrCategories.Remove(existing);
+                        //if (keywords != null)
+                        //    foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
 
-                        await _db.SaveChangesAsync();
-                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
-                        await _freelance.ShowFrMenu(chatId, userId, msgId);
+                        //await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        //await _freelance.ShowFrMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -414,14 +458,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
-                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
-                        _db.ProfiCategories.Remove(existing);
-                        if (keywords != null)
-                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+                        //var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == catId);
+                        //_db.ProfiCategories.Remove(existing);
+                        //if (keywords != null)
+                        //    foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
 
-                        await _db.SaveChangesAsync();
-                        await _bot.AnswerCallbackQuery(cb.Id, "Отключено");
-                        await _freelance.ShowProfiMenu(chatId, userId, msgId);
+                        //await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        //await _freelance.ShowProfiMenu(chatId, userId, msgId);
                     }
                     else
                     {
@@ -454,14 +498,14 @@ namespace BotParser
 
                     if (existing != null)
                     {
-                        var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == slug);
-                        _db.WorkspaceCategories.Remove(existing);
-                        if (keywords != null)
-                            foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
+                        //var keywords = _db.UserKeywordFilters.Where(c => c.CategoryId == slug);
+                        //_db.WorkspaceCategories.Remove(existing);
+                        //if (keywords != null)
+                        //    foreach (var word in keywords) _db.UserKeywordFilters.Remove(word);
 
-                        await _db.SaveChangesAsync();
-                        await _bot.AnswerCallbackQuery(cb.Id, "Подписка отключена");
-                        await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
+                        //await _db.SaveChangesAsync();
+                        await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        //await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
                     }
                     else
                     {
