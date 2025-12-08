@@ -15,12 +15,15 @@ namespace BotParser.Services
         private readonly ILogger<CategoryCheckerService> _log;
         private readonly Dictionary<string, DateTime> _lastCheckTimes = new();
         private readonly FreelanceService _freelance;
+        private readonly MobileProxyService _proxyService;
+        private DateTime _lastRotation = DateTime.MinValue;
 
-        public CategoryCheckerService(IServiceProvider sp, ILogger<CategoryCheckerService> log, FreelanceService freelance)
+        public CategoryCheckerService(IServiceProvider sp, ILogger<CategoryCheckerService> log, FreelanceService freelance, MobileProxyService mobileProxyService)
         {
             _sp = sp;
             _log = log;
             _freelance = freelance;
+            _proxyService = mobileProxyService;
         }
 
         protected override async Task ExecuteAsync(CancellationToken ct)
@@ -31,6 +34,16 @@ namespace BotParser.Services
             {
                 try
                 {
+                    // РОТАЦИЯ IP КАЖДЫЕ 10 МИНУТ
+                    if (DateTime.UtcNow - _lastRotation > TimeSpan.FromMinutes(10))
+                    {
+                        var newIp = await _proxyService.RotateAndVerifyIpAsync(_log);
+                        if (newIp != null)
+                            _lastRotation = DateTime.UtcNow;
+                        else
+                            _lastRotation = DateTime.UtcNow.AddMinutes(3); // повтор через 3 мин, если не вышло
+                    }
+
                     await CheckKworkSubscriptions(ct);
                     await CheckFlSubscriptions(ct);
                     await CheckYoudoSubscriptions(ct);

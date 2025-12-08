@@ -4,8 +4,9 @@ using BotParser.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Telegram.Bot;
+using Microsoft.Extensions.Logging;
 using Serilog;
+using Telegram.Bot;
 
 
 namespace BotParser
@@ -46,7 +47,12 @@ namespace BotParser
                 client.DefaultRequestHeaders.Add("Referer", "https://youdo.com/tasks");
             });
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-                new TelegramBotClient("8565915816:AAFeCJoTB0nwKyLD0z_ruoggkUBrWOvx"));
+                new TelegramBotClient("8521111908:AAHaiDcpn54kOXpt0EexRpw7sf10MPXv"));
+            builder.Services.AddSingleton(new MobileProxyService(
+    changeIpUrl: "https://changeip.mobileproxy.space/?proxy_key=b8a11e393b4321eba7f497f208c2fdbb&format=json",
+    checkIpUrl: "https://mobileproxy.space/api.html?command=proxy_ip&proxy_id=438773",
+    bearerToken: "a0da7f8302087053ba2d36847b2780d8"
+));
 
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>
@@ -75,6 +81,7 @@ namespace BotParser
             {
                 Log.Information("Бот запускается...");
                 app.Run();
+
             }
             catch (Exception ex)
             {

@@ -33,7 +33,8 @@ namespace BotParser.Parsers
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--no-zygote",
-        "--single-process"
+        "--single-process",
+        "--proxy-server=http://gate.mobileproxy.space:10000"
     }
                 // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
             });

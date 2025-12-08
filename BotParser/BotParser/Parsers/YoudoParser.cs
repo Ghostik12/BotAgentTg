@@ -24,6 +24,11 @@ namespace BotParser.Parsers
 
         public async Task<List<YoudoOrder>> GetNewOrdersAsync(int? categoryId = null)
         {
+            const string PROXY_IP = "mpr.site"; // твой IP или домен
+            const int PROXY_PORT = 12; // твой порт
+            const string PROXY_USER = "uVe"; // из кабинета
+            const string PROXY_PASS = "egZuU5dAG"; // из кабинета
+
             var orders = new List<YoudoOrder>();
 
             await new BrowserFetcher().DownloadAsync();
@@ -37,7 +42,8 @@ namespace BotParser.Parsers
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--no-zygote",
-        "--single-process"
+        "--single-process",
+        $"--proxy-server={PROXY_IP}:{PROXY_PORT}"
     }
                 // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
             });
@@ -48,9 +54,14 @@ namespace BotParser.Parsers
             await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
             await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
             await page.EvaluateExpressionAsync("() => { Object.defineProperty(navigator, 'webdriver', { get: () => false }); }");
+            await page.AuthenticateAsync(new Credentials
+            {
+                Username = PROXY_USER,
+                Password = PROXY_PASS
+            });
 
             // URL не меняется, но для категории кликнем (если нужно)
-            var url = "https://youdo.com/tasks";
+            var url = "https://youdo.com/tasks-all-opened-all";
             await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } });
 
             // Если категория — симулируем клик (YouDo SPA, URL не меняется, но JS фильтрует)
@@ -58,11 +69,19 @@ namespace BotParser.Parsers
             {
                 // Клик по категории (селектор по названию, добавь if для каждой)
                 var catSelector = GetCategorySelector(categoryId.Value); // см. метод ниже
-                if (!string.IsNullOrEmpty(catSelector))
-                {
-                    await page.ClickAsync(catSelector);
-                    await Task.Delay(3000); // ждём подгрузки
-                }
+                await page.EvaluateExpressionAsync($@"
+        () => {{
+            const checkbox = document.querySelector('input[type=""checkbox""][value=""{catSelector}""]');
+            if (checkbox) {{
+                checkbox.checked = true;
+                checkbox.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                checkbox.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                checkbox.closest('div.Checkbox_container__lCn3m')?.click();
+            }}
+        }}
+    ");
+
+                await Task.Delay(4000); // ждём подгрузки заказов
             }
 
             await Task.Delay(_rnd.Next(4000, 6000));

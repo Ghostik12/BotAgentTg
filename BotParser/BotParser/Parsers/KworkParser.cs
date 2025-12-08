@@ -23,6 +23,11 @@ namespace BotParser.Parsers
 
         public async Task<List<KworkOrder>> GetNewOrdersAsync(int? categoryId = null)
         {
+            const string PROXY_IP = "mproxy.site"; // твой IP или домен
+            const int PROXY_PORT = 12394; // твой порт
+            const string PROXY_USER = "uVezAB"; // из кабинета
+            const string PROXY_PASS = "egZuU5dAG7Sy"; // из кабинета
+
             var orders = new List<KworkOrder>();
 
             // Запускаем headless Chrome
@@ -37,16 +42,21 @@ namespace BotParser.Parsers
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--no-zygote",
-        "--single-process"
+        "--single-process",
+        $"--proxy-server={PROXY_IP}:{PROXY_PORT}"
     }
-                // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
             });
+
             using var page = await browser.NewPageAsync();
 
             // Настраиваем браузер как реальный юзер
             await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
             await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
-
+            await page.AuthenticateAsync(new Credentials
+            {
+                Username = PROXY_USER,
+                Password = PROXY_PASS
+            });
             var url = categoryId.HasValue && categoryId.Value != 0
                 ? $"https://kwork.ru/projects?c={categoryId.Value}"
                 : "https://kwork.ru/projects";

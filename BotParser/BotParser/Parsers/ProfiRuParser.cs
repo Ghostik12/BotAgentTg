@@ -41,7 +41,8 @@ namespace BotParser.Parsers
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--no-zygote",
-        "--single-process"
+        "--single-process",
+        "--proxy-server=http://nz.mobileproxy.space:64139"
     }
                 // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
             });

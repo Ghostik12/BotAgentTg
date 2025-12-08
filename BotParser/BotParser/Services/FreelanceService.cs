@@ -262,10 +262,22 @@ namespace BotParser.Services
             foreach (var kvp in FlCategories)
             {
                 var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
-                var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
-                    : "❌";
-                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fl_cat_{kvp.Key}") });
+
+                string status;
+                if (sub == null)
+                    status = "❌ OFF";
+                else if (sub.NotificationInterval == "off")
+                    status = "✅ Выкл";
+                else
+                {
+                    var full = $"✅ {GetPrettyInterval(sub.NotificationInterval)}";
+                    status = full.Length > 10 ? full.Substring(0, 8) + ".." : full;
+                }
+
+                buttons.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fl_cat_{kvp.Key}")
+        });
             }
 
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
@@ -556,10 +568,22 @@ namespace BotParser.Services
             foreach (var kvp in YoudoCategories)
             {
                 var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
-                var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
-                    : "❌";
-                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"youdo_cat_{kvp.Key}") });
+
+                string status;
+                if (sub == null)
+                    status = "❌ OFF";
+                else if (sub.NotificationInterval == "off")
+                    status = "✅ Выкл";
+                else
+                {
+                    var full = $"✅ {GetPrettyInterval(sub.NotificationInterval)}";
+                    status = full.Length > 10 ? full.Substring(0, 8) + ".." : full;
+                }
+
+                buttons.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"youdo_cat_{kvp.Key}")
+        });
             }
 
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
@@ -694,10 +718,22 @@ namespace BotParser.Services
             foreach (var kvp in FrCategories)
             {
                 var sub = subs.FirstOrDefault(s => s.CategoryId == kvp.Key);
-                var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
-                    : "❌";
-                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fr_cat_{kvp.Key}") });
+
+                string status;
+                if (sub == null)
+                    status = "❌ OFF";
+                else if (sub.NotificationInterval == "off")
+                    status = "✅ Выкл";
+                else
+                {
+                    var full = $"✅ {GetPrettyInterval(sub.NotificationInterval)}";
+                    status = full.Length > 10 ? full.Substring(0, 8) + ".." : full;
+                }
+
+                buttons.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"fr_cat_{kvp.Key}")
+        });
             }
 
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
@@ -730,10 +766,22 @@ namespace BotParser.Services
             foreach (var kvp in WsCategories)
             {
                 var sub = subs.FirstOrDefault(s => s.CategorySlug == kvp.Key);
-                var status = sub != null
-                    ? (sub.NotificationInterval == "off" ? "✅ Выкл" : $"✅ {GetPrettyInterval(sub.NotificationInterval).Substring(0, 10)}...")
-                    : "❌";
-                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"ws_cat_{kvp.Key}") });
+
+                string status;
+                if (sub == null)
+                    status = "❌ OFF";
+                else if (sub.NotificationInterval == "off")
+                    status = "✅ Выкл";
+                else
+                {
+                    var full = $"✅ {GetPrettyInterval(sub.NotificationInterval)}";
+                    status = full.Length > 10 ? full.Substring(0, 8) + ".." : full;
+                }
+
+                buttons.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData($"{status} {kvp.Value}", $"ws_cat_{kvp.Key}")
+        });
             }
 
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
