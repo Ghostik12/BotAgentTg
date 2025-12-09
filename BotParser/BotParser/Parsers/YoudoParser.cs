@@ -24,10 +24,10 @@ namespace BotParser.Parsers
 
         public async Task<List<YoudoOrder>> GetNewOrdersAsync(int? categoryId = null)
         {
-            const string PROXY_IP = "mpr.site"; // твой IP или домен
-            const int PROXY_PORT = 12; // твой порт
-            const string PROXY_USER = "uVe"; // из кабинета
-            const string PROXY_PASS = "egZuU5dAG"; // из кабинета
+            const string PROXY_IP = "mproxy.site"; // твой IP или домен
+            const int PROXY_PORT = 12394; // твой порт
+            const string PROXY_USER = "uVezAB"; // из кабинета
+            const string PROXY_PASS = "egZuU5dAG7Sy"; // из кабинета
 
             var orders = new List<YoudoOrder>();
 

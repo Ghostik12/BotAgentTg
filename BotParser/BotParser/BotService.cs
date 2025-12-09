@@ -6,11 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 using static Microsoft.Extensions.Logging.EventSource.LoggingEventSource;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace BotParser
 {
@@ -23,17 +25,23 @@ namespace BotParser
         private readonly ConcurrentDictionary<long, (string platform, int categoryId)> WaitingForKeywords = new();
         private readonly ConcurrentDictionary<long, string> WaitingForProfiCustomQuery = new();
         private readonly ILogger<BotService> _log;
+        private readonly ConcurrentDictionary<long, string> userStates = new();
+        private readonly ConcurrentDictionary<long, string> tempUserData = new();
+        private EncryptionService _encryptionService;
+        private const string WaitingProfiLogin = "waiting_profi_login";
+        private const string WaitingProfiPassword = "waiting_profi_password";
 
-        public BotService(ITelegramBotClient bot, IServiceProvider sp, FreelanceService freelance, KworkBotDbContext db, ILogger<BotService> log)
+        public BotService(ITelegramBotClient bot, IServiceProvider sp, FreelanceService freelance, KworkBotDbContext db, ILogger<BotService> log, EncryptionService encryptionService)
         {
             _bot = bot;
             _sp = sp;
             _db = db;
             _freelance = freelance;
             _log = log;
+            _encryptionService = encryptionService;
         }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _bot.StartReceiving(HandleUpdate, HandleError, cancellationToken: stoppingToken);
         Console.WriteLine("Бот запущен!");
@@ -96,7 +104,62 @@ namespace BotParser
 
                     return;
                 }
+
+                else if (userStates.TryGetValue(userIds, out var state))
+                {
+                    if (state == WaitingProfiLogin)
+                    {
+                        var queryText = update.Message.Text?.Trim();
+
+                        if (string.IsNullOrEmpty(queryText))
+                        {
+                            await bot.SendMessage(userIds, "Ошибка, пустой логин");
+                            return;
+                        }
+
+                        await _bot.SendMessage(userIds, "Теперь введите пароль:");
+                        //userStates.TryRemove(userIds, out _);
+                        userStates[userIds] = WaitingProfiPassword;
+                        tempUserData[userIds] = queryText; // временно сохраняем логин
+                        return;
+                    }
+
+                    if (state == WaitingProfiPassword)
+                    {
+                        var queryText = update.Message.Text?.Trim();
+
+                        if (string.IsNullOrEmpty(queryText) || queryText.Length < 2)
+                        {
+                            await bot.SendMessage(userIds, "Ошибка, пустой парол");
+                            return;
+                        }
+
+                        var login = tempUserData.GetValueOrDefault(userIds);
+                        var encryptedPass = _encryptionService.Encrypt(queryText);
+
+                        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userIds);
+                        if (user == null)
+                        {
+                            user = new Models.User { Id = userIds };
+                            _db.Users.Add(user);
+                        }
+
+                        user.ProfiLogin = login;
+                        user.ProfiEncryptedPassword = encryptedPass;
+                        await _db.SaveChangesAsync();
+
+                        await _bot.SendMessage(userIds,
+                            "Данные сохранены! Теперь можно пользоваться Profi.ru");
+
+                        await _freelance.ShowProfiMenu(userIds, userIds);
+
+                        userStates.TryRemove(userIds, out _);
+                        tempUserData.TryRemove(userIds, out _);
+                        return;
+                    }
+                }
             }
+
 
             if (update.Message?.Chat.Id != null)
             {
@@ -173,7 +236,7 @@ namespace BotParser
 
                 else if (data == "my_subscriptions")
                     await _freelance.ShowMySubscriptions(chatId, userId, msgId);
-                
+
                 else if (data == "fr_menu")
                     await _freelance.ShowFrMenu(chatId, userId, msgId);
 
@@ -487,7 +550,23 @@ namespace BotParser
                     await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
 
                 else if (data == "profi_menu")
-                    await _freelance.ShowProfiMenu(chatId, userId, msgId);
+                {
+                    var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                    if (user?.ProfiLogin != null && user.ProfiEncryptedPassword != null)
+                    {
+                        // Уже есть данные — сразу показываем меню Profi
+                        await _freelance.ShowProfiMenu(chatId, userId, msgId);
+                    }
+                    else 
+                    { 
+                    
+                        await _bot.SendMessage(chatId,
+                            "Для работы с Profi.ru нужен личный аккаунт.\n\nВведите логин:");
+                        userStates[userId] = WaitingProfiLogin;
+                    }
+                    await _bot.AnswerCallbackQuery(callbackQueryId: cb.Id);
+                    //return;
+                }
 
                 else if (data.StartsWith("ws_cat_"))
                 {

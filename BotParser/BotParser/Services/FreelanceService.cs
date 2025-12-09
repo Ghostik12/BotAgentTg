@@ -553,7 +553,9 @@ namespace BotParser.Services
                 {
                     Id = userId,
                     Username = username,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
+                    ProfiEncryptedPassword = null,
+                    ProfiLogin = null
                 });
                 await _db.SaveChangesAsync();
             }

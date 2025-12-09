@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Telegram.Bot.Types;
 
 
 namespace BotParser.Services
@@ -66,7 +67,9 @@ namespace BotParser.Services
         {
             using var scope = _sp.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
-            var parser = scope.ServiceProvider.GetRequiredService<ProfiRuParser>();
+            var parser = scope.ServiceProvider
+                .GetRequiredService<Func<long, ProfiRuParser>>()
+                .Invoke(user.TelegramId);
             var freelance = scope.ServiceProvider.GetRequiredService<FreelanceService>();
 
             var subs = await db.ProfiCategories

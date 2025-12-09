@@ -1,4 +1,7 @@
-﻿using HtmlAgilityPack;
+﻿using BotParser.Db;
+using BotParser.Services;
+using HtmlAgilityPack;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using PuppeteerSharp;
 using System.Text.RegularExpressions;
@@ -8,8 +11,9 @@ namespace BotParser.Parsers
     public class ProfiRuParser
     {
         private readonly Random _rnd = new();
-        private readonly string _login;
-        private readonly string _password;
+        private readonly IEncryptionService _encryption;
+        private readonly long _telegramUserId;
+        private readonly KworkBotDbContext _db;
 
         public record ProfiOrder(
             long OrderId,
@@ -20,15 +24,21 @@ namespace BotParser.Parsers
             string Published,
             string Url);
 
-        public ProfiRuParser(IConfiguration config)
+        public ProfiRuParser(KworkBotDbContext dbContext, long userId, IEncryptionService encryptionService)
         {
-            _login = config["Profi:Login"] ?? throw new ArgumentNullException("Profi:Login");
-            _password = config["Profi:Password"] ?? throw new ArgumentNullException("Profi:Password");
+            _encryption = encryptionService;
+            _telegramUserId = userId;
+            _db = dbContext;
         }
 
         public async Task<List<ProfiOrder>> GetOrdersAsync(string query)
         {
             var orders = new List<ProfiOrder>();
+            var user = await _db.Users.FirstAsync(u => u.Id == _telegramUserId);
+            if (string.IsNullOrEmpty(user.ProfiLogin) || string.IsNullOrEmpty(user.ProfiEncryptedPassword))
+                throw new UnauthorizedAccessException("Нет данных для входа в Profi.ru");
+
+            var password = _encryption.Decrypt(user.ProfiEncryptedPassword);
 
             await new BrowserFetcher().DownloadAsync();
             await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
@@ -56,8 +66,8 @@ namespace BotParser.Parsers
 
             // Ждём формы
             await page.WaitForSelectorAsync("input[placeholder='Логин или телефон']", new WaitForSelectorOptions { Timeout = 30000 });
-            await page.TypeAsync("input[placeholder='Логин или телефон']", _login);
-            await page.TypeAsync("input[placeholder='Пароль']", _password);
+            await page.TypeAsync("input[placeholder='Логин или телефон']", user.ProfiLogin);
+            await page.TypeAsync("input[placeholder='Пароль']", password);
             await page.ClickAsync("button[data-testid='enter_with_sms_btn']");
 
             await Task.Delay(10000);

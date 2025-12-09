@@ -2,6 +2,7 @@
 using BotParser.Parsers;
 using BotParser.Services;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -54,9 +55,13 @@ namespace BotParser
     bearerToken: "a0da7f8302087053ba2d36847b2780d8"
 ));
 
+            builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(@"C:\bot\keys")) // или C:\bot\keys на Windows /opt/botparser/keys
+    .SetApplicationName("BotParser");
+
             // База SQLite
             builder.Services.AddDbContext<KworkBotDbContext>(options =>
-                options.UseSqlite("Data Source=kworkbot17.db"));
+                options.UseSqlite("Data Source=kworkbot18.db"));
 
             // Сервисы
             builder.Services.AddScoped<FreelanceService>();
@@ -67,6 +72,9 @@ namespace BotParser
             builder.Services.AddScoped<FreelanceRuParser>();
             builder.Services.AddScoped<WorkspaceRuParser>();
             builder.Services.AddScoped<ProfiRuParser>();
+            builder.Services.AddScoped<EncryptionService>();
+            builder.Services.AddScoped<Func<long, ProfiRuParser>>(sp =>
+            telegramId => new ProfiRuParser(sp.GetRequiredService<KworkBotDbContext>(), telegramId, sp.GetRequiredService<IEncryptionService>()));
 
             var app = builder.Build();
 
