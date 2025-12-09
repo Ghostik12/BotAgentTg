@@ -1,8 +1,6 @@
-﻿using HtmlAgilityPack;
+﻿using BotParser.Services;
+using HtmlAgilityPack;
 using PuppeteerSharp;
-using System.Net;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Web;
 
 namespace BotParser.Parsers
@@ -10,6 +8,12 @@ namespace BotParser.Parsers
     public class KworkParser
     {
         private readonly Random _rnd = new();
+        private readonly IProxyProvider _proxy;
+
+        public KworkParser(IProxyProvider proxy)
+        {
+            _proxy = proxy;
+        }
 
         public record KworkOrder(
             string Title,
@@ -23,28 +27,26 @@ namespace BotParser.Parsers
 
         public async Task<List<KworkOrder>> GetNewOrdersAsync(int? categoryId = null)
         {
-            const string PROXY_IP = "mproxy.site"; // твой IP или домен
-            const int PROXY_PORT = 12394; // твой порт
-            const string PROXY_USER = "uVezAB"; // из кабинета
-            const string PROXY_PASS = "egZuU5dAG7Sy"; // из кабинета
-
             var orders = new List<KworkOrder>();
 
             // Запускаем headless Chrome
             await new BrowserFetcher().DownloadAsync();
+            var args = new List<string>
+        {
+            "--no-sandbox", "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage", "--disable-gpu",
+            "--no-zygote", "--single-process"
+        };
+
+            if (_proxy.IsEnabled)
+            {
+                args.Add($"--proxy-server={_proxy.Host}:{_proxy.Port}");
+            }
+
             await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
             {
                 Headless = true,
-                Args = new[]
-    {
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--single-process",
-        $"--proxy-server={PROXY_IP}:{PROXY_PORT}"
-    }
+                Args = args.ToArray()
             });
 
             using var page = await browser.NewPageAsync();
@@ -52,11 +54,14 @@ namespace BotParser.Parsers
             // Настраиваем браузер как реальный юзер
             await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
             await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
-            await page.AuthenticateAsync(new Credentials
+            if (_proxy.IsEnabled)
             {
-                Username = PROXY_USER,
-                Password = PROXY_PASS
-            });
+                await page.AuthenticateAsync(new Credentials
+                {
+                    Username = _proxy.Username,
+                    Password = _proxy.Password
+                });
+            }
             var url = categoryId.HasValue && categoryId.Value != 0
                 ? $"https://kwork.ru/projects?c={categoryId.Value}"
                 : "https://kwork.ru/projects";

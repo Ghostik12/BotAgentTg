@@ -1,6 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using PuppeteerSharp;
-using Serilog.Core;
 using System.Text.Json;
 
 namespace BotParser.Services

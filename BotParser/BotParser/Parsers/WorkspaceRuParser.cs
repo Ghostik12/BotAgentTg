@@ -8,6 +8,9 @@ namespace BotParser.Parsers
     public class WorkspaceRuParser
     {
         private readonly Random _rnd = new();
+        private readonly IProxyProvider _proxy;
+
+        public WorkspaceRuParser(IProxyProvider proxy) { _proxy = proxy; }
 
         public record WsOrder(
             long TenderId,
@@ -24,23 +27,35 @@ namespace BotParser.Parsers
             var slug = categorySlug.HasValue ? FreelanceService.CategoryIdToSlug.GetValueOrDefault(categorySlug.Value) : null;
 
             await new BrowserFetcher().DownloadAsync();
+            var args = new List<string>
+        {
+            "--no-sandbox", "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage", "--disable-gpu",
+            "--no-zygote", "--single-process"
+        };
+
+            if (_proxy.IsEnabled)
+            {
+                args.Add($"--proxy-server={_proxy.Host}:{_proxy.Port}");
+            }
+
             await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
             {
                 Headless = true,
-                Args = new[]
-    {
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--single-process"
-    }
-                // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
+                Args = args.ToArray()
             });
 
             await using var page = await browser.NewPageAsync();
             await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+            if (_proxy.IsEnabled)
+            {
+                await page.AuthenticateAsync(new Credentials
+                {
+                    Username = _proxy.Username,
+                    Password = _proxy.Password
+                });
+            }
 
             string url = slug == null
                 ? "https://workspace.ru/tenders/?SORT=public&ORDER=0"

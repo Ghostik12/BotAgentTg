@@ -1,11 +1,11 @@
 ﻿using BotParser.Db;
+using BotParser.Models;
 using BotParser.Parsers;
 using BotParser.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Serilog;
 using Telegram.Bot;
 
@@ -49,11 +49,11 @@ namespace BotParser
             });
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
                 new TelegramBotClient("8521111908:AAHaiDcpn54kOXpt0EexRpw7sf10MPXv"));
-            builder.Services.AddSingleton(new MobileProxyService(
-    changeIpUrl: "https://changeip.mobileproxy.space/?proxy_key=b8a11e393b4321eba7f497f208c2fdbb&format=json",
-    checkIpUrl: "https://mobileproxy.space/api.html?command=proxy_ip&proxy_id=438773",
-    bearerToken: "a0da7f8302087053ba2d36847b2780d8"
-));
+            builder.Services.Configure<MobileProxyConfig>(
+    builder.Configuration.GetSection("MobileProxy"));
+
+            builder.Services.AddSingleton<MobileProxyService>(); // он сам возьмёт IOptions из DI
+            builder.Services.AddScoped<IProxyProvider, MobileProxyProvider>();
 
             builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(@"C:\bot\keys")) // или C:\bot\keys на Windows /opt/botparser/keys

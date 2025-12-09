@@ -67,9 +67,6 @@ namespace BotParser.Services
         {
             using var scope = _sp.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<KworkBotDbContext>();
-            var parser = scope.ServiceProvider
-                .GetRequiredService<Func<long, ProfiRuParser>>()
-                .Invoke(user.TelegramId);
             var freelance = scope.ServiceProvider.GetRequiredService<FreelanceService>();
 
             var subs = await db.ProfiCategories
@@ -85,7 +82,10 @@ namespace BotParser.Services
 
                 // Берём запрос из словаря по CategoryId
                 //var query = FreelanceService.ProfiQueries[sub.Id];
-                var query = db.ProfiCategories.Where(c => c.Id == sub.Id).Select(c => c.SearchQuery).ToArray();
+                var parser = scope.ServiceProvider
+                .GetRequiredService<Func<long, ProfiRuParser>>()
+                .Invoke(sub.UserId);
+                var query = await db.ProfiCategories.Where(c => c.Id == sub.Id).Select(c => c.SearchQuery).ToArrayAsync();
                 var orders = await parser.GetOrdersAsync(query[0]);
 
                 var sentIds = await db.SentProfiOrders

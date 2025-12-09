@@ -14,6 +14,7 @@ namespace BotParser.Parsers
         private readonly IEncryptionService _encryption;
         private readonly long _telegramUserId;
         private readonly KworkBotDbContext _db;
+        private readonly IProxyProvider _proxy;
 
         public record ProfiOrder(
             long OrderId,
@@ -24,11 +25,12 @@ namespace BotParser.Parsers
             string Published,
             string Url);
 
-        public ProfiRuParser(KworkBotDbContext dbContext, long userId, IEncryptionService encryptionService)
+        public ProfiRuParser(KworkBotDbContext dbContext, long userId, IEncryptionService encryptionService, IProxyProvider proxy)
         {
             _encryption = encryptionService;
             _telegramUserId = userId;
             _db = dbContext;
+            _proxy = proxy;
         }
 
         public async Task<List<ProfiOrder>> GetOrdersAsync(string query)
@@ -41,25 +43,35 @@ namespace BotParser.Parsers
             var password = _encryption.Decrypt(user.ProfiEncryptedPassword);
 
             await new BrowserFetcher().DownloadAsync();
+            var args = new List<string>
+        {
+            "--no-sandbox", "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage", "--disable-gpu",
+            "--no-zygote", "--single-process"
+        };
+
+            if (_proxy.IsEnabled)
+            {
+                args.Add($"--proxy-server={_proxy.Host}:{_proxy.Port}");
+            }
+
             await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
             {
                 Headless = true,
-                Args = new[]
-    {
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--single-process",
-        "--proxy-server=http://nz.mobileproxy.space:64139"
-    }
-                // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
+                Args = args.ToArray()
             });
             await using var page = await browser.NewPageAsync();
 
             await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
             await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            if (_proxy.IsEnabled)
+            {
+                await page.AuthenticateAsync(new Credentials
+                {
+                    Username = _proxy.Username,
+                    Password = _proxy.Password
+                });
+            }
 
             // Логин через POST (как в Python-скрапере — надёжно)
             await page.GoToAsync("https://profi.ru/backoffice/n.php", new NavigationOptions { Timeout = 60000 });

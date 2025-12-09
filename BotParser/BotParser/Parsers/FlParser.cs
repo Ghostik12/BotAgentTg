@@ -1,4 +1,5 @@
-﻿using HtmlAgilityPack;
+﻿using BotParser.Services;
+using HtmlAgilityPack;
 using PuppeteerSharp;
 using System;
 using System.Collections.Generic;
@@ -11,6 +12,9 @@ namespace BotParser.Parsers
     public class FlParser
     {
         private readonly Random _rnd = new();
+        private readonly IProxyProvider _proxy;
+
+        public FlParser(IProxyProvider proxy) { _proxy = proxy; }
 
         public record FlOrder(
             string Title,
@@ -25,19 +29,22 @@ namespace BotParser.Parsers
             var orders = new List<FlOrder>();
 
             await new BrowserFetcher().DownloadAsync();
+            var args = new List<string>
+        {
+            "--no-sandbox", "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage", "--disable-gpu",
+            "--no-zygote", "--single-process"
+        };
+
+            if (_proxy.IsEnabled)
+            {
+                args.Add($"--proxy-server={_proxy.Host}:{_proxy.Port}");
+            }
+
             await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
             {
                 Headless = true,
-                Args = new[]
-    {
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--single-process"
-    }
-                // НЕ ПИШИ ExecutablePath НИГДЕ — УДАЛИ СТРОЧКУ!
+                Args = args.ToArray()
             });
 
             await using var page = await browser.NewPageAsync();
@@ -46,6 +53,14 @@ namespace BotParser.Parsers
             await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
             await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
             await page.EvaluateExpressionAsync("() => { Object.defineProperty(navigator, 'webdriver', { get: () => false }); }");
+            if (_proxy.IsEnabled)
+            {
+                await page.AuthenticateAsync(new Credentials
+                {
+                    Username = _proxy.Username,
+                    Password = _proxy.Password
+                });
+            }
 
             var url = categoryId.HasValue && categoryId.Value != 0
                 ? $"https://www.fl.ru/projects/category/{GetCategorySlug(categoryId.Value)}/"
