@@ -5,6 +5,7 @@ using BotParser.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Telegram.Bot;
@@ -48,11 +49,19 @@ namespace BotParser
                 client.DefaultRequestHeaders.Add("Referer", "https://youdo.com/tasks");
             });
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-                new TelegramBotClient("8521111908:AAHaiDcpn54kOXpt0EexRpw7sf10MPXv"));
+                new TelegramBotClient("8537792489:AAGZXlowJn2UTzAIZ2hwJxQahyG52aUU"));
             builder.Services.Configure<MobileProxyConfig>(
     builder.Configuration.GetSection("MobileProxy"));
 
-            builder.Services.AddSingleton<MobileProxyService>(); // он сам возьмёт IOptions из DI
+            builder.Services.AddSingleton<MobileProxyService>(sp =>
+            {
+                var config = sp.GetRequiredService<IConfiguration>();
+                return new MobileProxyService(
+                    config["MobileProxy:ChangeIpUrl"]!,
+                    config["MobileProxy:CheckIpUrl"]!,
+                    config["MobileProxy:BearerToken"]!
+                );
+            });
             builder.Services.AddScoped<IProxyProvider, MobileProxyProvider>();
 
             builder.Services.AddDataProtection()
@@ -73,8 +82,9 @@ namespace BotParser
             builder.Services.AddScoped<WorkspaceRuParser>();
             builder.Services.AddScoped<ProfiRuParser>();
             builder.Services.AddScoped<EncryptionService>();
+            builder.Services.AddScoped<IEncryptionService, EncryptionService>();
             builder.Services.AddScoped<Func<long, ProfiRuParser>>(sp =>
-            telegramId => new ProfiRuParser(sp.GetRequiredService<KworkBotDbContext>(), telegramId, sp.GetRequiredService<IEncryptionService>()));
+            telegramId => new ProfiRuParser(sp.GetRequiredService<KworkBotDbContext>(), telegramId, sp.GetRequiredService<IEncryptionService>(), sp.GetRequiredService<IProxyProvider>()));
 
             var app = builder.Build();
 

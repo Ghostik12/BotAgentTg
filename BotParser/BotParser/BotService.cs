@@ -50,16 +50,6 @@ namespace BotParser
 
     private async Task HandleUpdate(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
-            if (update.Message?.Text == "/start")
-            {
-                await _freelance.StartMessage(update.Message.Chat.Id);
-                await _freelance.EnableMenuButton(update.Message.Chat.Id);
-                await _freelance.EnsureUserExists(update.Message.Chat.Id, update.Message.Chat.Username);
-                return;
-            }
-
-            if(update.Message?.Text == "/menu")
-                await _freelance.ShowMainMenu(update.Message.Chat.Id);
 
             if (update.Message?.Chat.Id != null)
             {
@@ -211,6 +201,28 @@ namespace BotParser
                     return;
                 }
             }
+            if (update.Message?.Text == "/start")
+            {
+                await _freelance.StartMessage(update.Message.Chat.Id);
+                await _freelance.EnableMenuButton(update.Message.Chat.Id);
+                await _freelance.EnsureUserExists(update.Message.Chat.Id, update.Message.Chat.Username);
+                userStates.TryRemove(update.Message.Chat.Id, out _);
+                tempUserData.TryRemove(update.Message.Chat.Id, out _);
+                WaitingForKeywords.TryRemove(update.Message.Chat.Id, out _);
+                return;
+            }
+
+            if (update.Message?.Text == "/menu" || update.Message?.Text == "📚 Главное меню")
+            {
+                await _freelance.ShowMainMenu(update.Message.Chat.Id);
+                userStates.TryRemove(update.Message.Chat.Id, out _);
+                tempUserData.TryRemove(update.Message.Chat.Id, out _);
+                WaitingForKeywords.TryRemove(update.Message.Chat.Id, out _);
+            }
+            if (update.Message?.Text == "⭐ Мои подписки")
+            {
+                await _freelance.ShowMySubscriptions(update.Message.Chat.Id, update.Message.From.Id);
+            }
 
             if (update.CallbackQuery is not { } cb) return;
 
@@ -236,6 +248,12 @@ namespace BotParser
 
                 else if (data == "my_subscriptions")
                     await _freelance.ShowMySubscriptions(chatId, userId, msgId);
+
+                else if (data.StartsWith("my_subs_"))
+                {
+                    var platform = data["my_subs_".Length..];
+                    await _freelance.ShowMySubscriptionsByPlatform(chatId, userId, platform, msgId);
+                }
 
                 else if (data == "fr_menu")
                     await _freelance.ShowFrMenu(chatId, userId, msgId);
@@ -298,6 +316,7 @@ namespace BotParser
 
                         //await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "kwork", msgId);
                         //await _freelance.ShowKworkMenu(chatId, userId, msgId);
                     }
                     else
@@ -334,6 +353,7 @@ namespace BotParser
 
                         //await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fl", msgId);
                         //await _freelance.ShowFlMenu(chatId, userId, msgId);
                     }
                     else
@@ -464,6 +484,7 @@ namespace BotParser
 
                         //await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "youdo", msgId);
                         //await _freelance.ShowYoudoMenu(chatId, userId, msgId);
                     }
                     else
@@ -496,6 +517,7 @@ namespace BotParser
 
                         //await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fr", msgId);
                         //await _freelance.ShowFrMenu(chatId, userId, msgId);
                     }
                     else
@@ -509,6 +531,7 @@ namespace BotParser
                         });
                         await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Подписка включена! (интервал по умолчанию: off)\nНастрой интервал →");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "fr", msgId);
                     }
                 }
 
@@ -528,6 +551,7 @@ namespace BotParser
 
                         //await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        await _freelance.ShowIntervalSelection(chatId, userId, catId, platform: "profi", msgId);
                         //await _freelance.ShowProfiMenu(chatId, userId, msgId);
                     }
                     else
@@ -557,16 +581,29 @@ namespace BotParser
                         // Уже есть данные — сразу показываем меню Profi
                         await _freelance.ShowProfiMenu(chatId, userId, msgId);
                     }
-                    else 
-                    { 
-                    
+                    else
+                    {
+                        var buttons = new[]
+                        {
+                            new[] { InlineKeyboardButton.WithCallbackData("Да", "profi_yes") },
+                            new[] { InlineKeyboardButton.WithCallbackData("Нет", "profi_no") } 
+                        };
+
+                        var markup = new InlineKeyboardMarkup(buttons);
                         await _bot.SendMessage(chatId,
-                            "Для работы с Profi.ru нужен личный аккаунт.\n\nВведите логин:");
-                        userStates[userId] = WaitingProfiLogin;
+                            "Для работы с Profi.ru нужен личный аккаунт.\n\nЕсли у вас есть аккаунт, то после согласия нужно будет ввести логин и пароль.", replyMarkup: markup);
                     }
                     await _bot.AnswerCallbackQuery(callbackQueryId: cb.Id);
-                    //return;
                 }
+
+                else if(data == "profi_yes")
+                {
+                    await _bot.SendMessage(chatId, "Введите логин:");
+                    userStates[userId] = WaitingProfiLogin;
+                }
+
+                else if (data == "profi_no")
+                    await _freelance.ShowMainMenu(chatId);
 
                 else if (data.StartsWith("ws_cat_"))
                 {
@@ -584,6 +621,7 @@ namespace BotParser
 
                         //await _db.SaveChangesAsync();
                         await _bot.AnswerCallbackQuery(cb.Id, "Вы уже подписаны на данную категорию");
+                        await _freelance.ShowIntervalSelection(chatId, userId, slug, platform: "ws", msgId);
                         //await _freelance.ShowWorkspaceMenu(chatId, userId, msgId);
                     }
                     else

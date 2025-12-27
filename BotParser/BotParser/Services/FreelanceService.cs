@@ -1,8 +1,10 @@
 ﻿using BotParser.Db;
 using BotParser.Parsers;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 using System.Net;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -160,6 +162,7 @@ namespace BotParser.Services
         }
 
         // ─────────────────────── ГЛАВНОЕ МЕНЮ ───────────────────────
+
         public async Task ShowMainMenu(long chatId, int? messageId = null)
         {
             var buttons = new[]
@@ -292,178 +295,177 @@ namespace BotParser.Services
         // ─────────────────────── МОИ ПОДПИСКИ ───────────────────────
         public async Task ShowMySubscriptions(long chatId, long userId, int? messageId = null)
         {
-            var kworkSubs = await _db.KworkCategories.Where(c => c.UserId == userId).ToListAsync();
-            var flSubs = await _db.FlCategories.Where(c => c.UserId == userId).ToListAsync();
-            var youDo = await _db.YoudoCategories.Where(c => c.UserId == userId).ToListAsync();
-            var frSubs = await _db.FrCategories.Where(c => c.UserId == userId).ToListAsync();
-            var wsSubs = await _db.WorkspaceCategories.Where(c => c.UserId == userId).ToListAsync();
-            var profiSubs = await _db.ProfiCategories.Where(c => c.UserId == userId).ToListAsync();
+            var kwork = await _db.KworkCategories.AnyAsync(c => c.UserId == userId);
+            var fl = await _db.FlCategories.AnyAsync(c => c.UserId == userId);
+            var youdo = await _db.YoudoCategories.AnyAsync(c => c.UserId == userId);
+            var fr = await _db.FrCategories.AnyAsync(c => c.UserId == userId);
+            var ws = await _db.WorkspaceCategories.AnyAsync(c => c.UserId == userId);
+            var profi = await _db.ProfiCategories.AnyAsync(c => c.UserId == userId);
 
-            if (!kworkSubs.Any() && !flSubs.Any() && !youDo.Any() && !frSubs.Any() && !wsSubs.Any() && !profiSubs.Any())
+            if (!kwork && !fl && !youdo && !fr && !ws && !profi)
             {
-                var texts = "У тебя пока нет активных подписок";
-                var markup = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("Назад", "main_menu"));
-
+                var markups = new InlineKeyboardMarkup(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
+                var texts = "У тебя пока нет активных подписок 😔";
                 if (messageId.HasValue)
-                    await _bot.EditMessageText(chatId, messageId.Value, texts, replyMarkup: markup);
+                    await _bot.EditMessageText(chatId, messageId.Value, texts, ParseMode.Html, replyMarkup: markups);
                 else
-                    await _bot.SendMessage(chatId, texts, replyMarkup: markup);
+                    await _bot.SendMessage(chatId, texts, ParseMode.Html, replyMarkup: markups);
                 return;
             }
 
-            var lines = new List<string> { $"<b>Мои подписки ({kworkSubs.Count + flSubs.Count + youDo.Count + frSubs.Count + wsSubs.Count + profiSubs.Count})</b>\n\n" };
-
-            if (kworkSubs.Any())
-            {
-                lines.Add("<b>Kwork.ru: 1️⃣</b>");
-            }
-
-            if (flSubs.Any())
-            {
-                lines.Add("<b>FL.ru: 2️⃣</b>");
-            }
-
-            if (youDo.Any())
-            {
-                lines.Add("<b>Youdo.com: 3️⃣</b>");
-            }
-
-            if (frSubs.Any())
-            {
-                lines.Add("<b>Freelance.ru: 4️⃣</b>");
-            }
-
-            if (wsSubs.Any())
-            {
-                lines.Add("<b>Workspace.ru: 5️⃣</b>");
-            }
-
-            if (wsSubs.Any())
-            {
-                lines.Add("<b>Profi.ru: 6️⃣</b>");
-            }
-
-            var text = string.Join("\n", lines);
-
+            var text = "<b>Мои подписки</b>\n\nВыбери биржу:";
             var buttons = new List<InlineKeyboardButton[]>();
 
-            foreach (var c in kworkSubs)
-            {
-                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
-                buttons.Add(new[]
-                {
-        InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 1️⃣",
-            $"edit_interval_kwork_{c.CategoryId}")
-                });
-            }
-
-            foreach (var c in flSubs)
-            {
-                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
-                buttons.Add(new[]
-                {
-        InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 2️⃣",
-            $"edit_interval_fl_{c.CategoryId}")
-                });
-            }
-
-            foreach (var c in youDo)
-            {
-                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
-                buttons.Add(new[]
-                {
-        InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 3️⃣",
-            $"edit_interval_youdo_{c.CategoryId}")
-                });
-            }
-
-            foreach (var c in frSubs)
-            {
-                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
-                buttons.Add(new[]
-                {
-        InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 4️⃣",
-            $"edit_interval_fr_{c.CategoryId}")
-                });
-            }
-
-            foreach (var c in wsSubs)
-            {
-                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
-                buttons.Add(new[]
-                {
-        InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 5️⃣",
-            $"edit_interval_ws_{c.CategorySlug}")
-                });
-            }
-
-            foreach (var c in profiSubs)
-            {
-                var status = c.NotificationInterval == "off" ? "🔕" : "🔔";
-                buttons.Add(new[]
-                {
-        InlineKeyboardButton.WithCallbackData(
-            $"{status} {c.Name} → {GetPrettyInterval(c.NotificationInterval)} 6️⃣",
-            $"edit_interval_profi_{c.Id}")
-                });
-            }
+            if (kwork) buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Kwork.ru 1️⃣", "my_subs_kwork") });
+            if (fl) buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("FL.ru 2️⃣", "my_subs_fl") });
+            if (youdo) buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("YouDo 3️⃣", "my_subs_youdo") });
+            if (fr) buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Freelance.ru 4️⃣", "my_subs_fr") });
+            if (ws) buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Workspace.ru 5️⃣", "my_subs_ws") });
+            if (profi) buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Profi.ru 6️⃣", "my_subs_profi") });
 
             buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu") });
 
+            var markup = new InlineKeyboardMarkup(buttons.ToArray());
+
             if (messageId.HasValue)
-                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: new InlineKeyboardMarkup(buttons.ToArray()));
+                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: markup);
             else
-                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: new InlineKeyboardMarkup(buttons.ToArray()));
+                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
+        }
+
+        public async Task ShowMySubscriptionsByPlatform(long chatId, long userId, string platform, int? messageId = null)
+        {
+            List<object> subs = platform.ToLower() switch
+            {
+                "kwork" => (await _db.KworkCategories.Where(c => c.UserId == userId).ToListAsync()).Cast<object>().ToList(),
+                "fl" => (await _db.FlCategories.Where(c => c.UserId == userId).ToListAsync()).Cast<object>().ToList(),
+                "youdo" => (await _db.YoudoCategories.Where(c => c.UserId == userId).ToListAsync()).Cast<object>().ToList(),
+                "fr" => (await _db.FrCategories.Where(c => c.UserId == userId).ToListAsync()).Cast<object>().ToList(),
+                "ws" => (await _db.WorkspaceCategories.Where(c => c.UserId == userId).ToListAsync()).Cast<object>().ToList(),
+                "profi" => (await _db.ProfiCategories.Where(c => c.UserId == userId).ToListAsync()).Cast<object>().ToList(),
+                _ => new List<object>()
+            };
+
+            if (!subs.Any())
+            {
+                var markups = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("Назад", "my_subscriptions"));
+                var texts = "Подписки на этой бирже отсутствуют";
+                if (messageId.HasValue)
+                    await _bot.EditMessageText(chatId, messageId.Value, texts, replyMarkup: markups);
+                else
+                    await _bot.SendMessage(chatId, texts, replyMarkup: markups);
+                return;
+            }
+
+            var platformName = GetPlatformName(platform);
+            var text = $"<b>{platformName}</b>\n\nАктивные подписки:";
+
+            var buttons = new List<InlineKeyboardButton[]>();
+
+            foreach (dynamic c in subs)
+            {
+                string name = c.Name ?? "Без названия";
+                string interval = c.NotificationInterval ?? "off";
+                var status = interval == "off" ? "🔕" : "🔔";
+                string id = c.CategoryId?.ToString() ?? c.Id?.ToString() ?? c.CategorySlug?.ToString();
+
+                buttons.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData(
+                $"{status} {name} → {GetPrettyInterval(interval)}",
+                $"edit_interval_{platform}_{id}")
+        });
+            }
+
+            buttons.Add(new[] { InlineKeyboardButton.WithCallbackData("Назад к биржам", "my_subscriptions") });
+
+            var markup = new InlineKeyboardMarkup(buttons.ToArray());
+
+            if (messageId.HasValue)
+                await _bot.EditMessageText(chatId, messageId.Value, text, ParseMode.Html, replyMarkup: markup);
+            else
+                await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: markup);
         }
 
         // ─────────────────────── ОТПРАВКА ЗАКАЗОВ ───────────────────────
 
         public async Task SendProfiOrderAsync(long chatId, ProfiRuParser.ProfiOrder order, int catId)
         {
-            var catName = _db.ProfiCategories.Where(c => c.UserId == chatId).Select(c => c.Name).ToArray();
+            try
+            {
+                var catName = _db.ProfiCategories.Where(c => c.UserId == chatId).Select(c => c.Name).ToArray();
 
-            var text = $"<b>Profi.ru — {catName[0]}</b>\n\n" +
-                       $"<b>{order.Title}</b>\n" +
-                       $"Бюджет: <b>{order.Budget}</b>\n" +
-                       $"{order.Description}\n\n" +
-                       $"<a href=\"{order.Url}\">Перейти к заказу</a>";
+                var text = $"<b>Profi.ru — {catName[0]}</b>\n\n" +
+                           $"<b>{order.Title}</b>\n" +
+                           $"Бюджет: <b>{order.Budget}</b>\n" +
+                           $"{order.Description}\n\n" +
+                           $"<a href=\"{order.Url}\">Перейти к заказу</a>";
 
-            await _bot.SendMessage(chatId, text, ParseMode.Html);
+                await _bot.SendMessage(chatId, text, ParseMode.Html);
+            }
+            catch (ApiRequestException ex) when (ex.ErrorCode == 403 && ex.Message.Contains("blocked"))
+            {
+
+                await RemoveUserCompletelyAsync(chatId);
+            }
+            catch (Exception ex)
+            {
+
+            }
         }
 
         public async Task SendKworkOrderAsync(long chatId, KworkParser.KworkOrder order)
         {
-            var title = WebUtility.HtmlEncode(order.Title);
-            var budget = new List<string>();
-            if (!string.IsNullOrEmpty(order.DesiredBudget))
-                budget.Add($"Желаемый: <b>{order.DesiredBudget.Trim()}</b>");
-            if (!string.IsNullOrEmpty(order.AllowedBudget))
-                budget.Add($"Допустимый: <b>{order.AllowedBudget.Trim()}</b>");
+            try
+            {
+                var title = WebUtility.HtmlEncode(order.Title);
+                var budget = new List<string>();
+                if (!string.IsNullOrEmpty(order.DesiredBudget))
+                    budget.Add($"Желаемый: <b>{order.DesiredBudget.Trim()}</b>");
+                if (!string.IsNullOrEmpty(order.AllowedBudget))
+                    budget.Add($"Допустимый: <b>{order.AllowedBudget.Trim()}</b>");
 
-            var budgetText = budget.Any() ? "\n" + string.Join("\n", budget) : "";
-            var desc = string.IsNullOrWhiteSpace(order.Description)
-                ? "" : WebUtility.HtmlEncode(order.Description.Length > 400 ? order.Description[..400] + "…" : order.Description);
+                var budgetText = budget.Any() ? "\n" + string.Join("\n", budget) : "";
+                var desc = string.IsNullOrWhiteSpace(order.Description)
+                    ? "" : WebUtility.HtmlEncode(order.Description.Length > 400 ? order.Description[..400] + "…" : order.Description);
 
-            var text = $"<b>Kwork: {title}</b>{budgetText}\n\n{desc}\n\n<a href=\"{order.Url}\">{order.Url}</a>";
+                var text = $"<b>Kwork: {title}</b>{budgetText}\n\n{desc}\n\n<a href=\"{order.Url}\">{order.Url}</a>";
 
-            await _bot.SendMessage(chatId, text, ParseMode.Html);
+                await _bot.SendMessage(chatId, text, ParseMode.Html);
+            }
+            catch (ApiRequestException ex) when (ex.ErrorCode == 403 && ex.Message.Contains("blocked"))
+            {
+
+                await RemoveUserCompletelyAsync(chatId);
+            }
+            catch (Exception ex)
+            {
+
+            }
         }
 
         public async Task SendFlOrderAsync(long chatId, FlParser.FlOrder order)
         {
-            var title = WebUtility.HtmlEncode(order.Title);
-            var budgetText = order.Budget != null ? $"\nБюджет: <b>{order.Budget}</b>" : "";
-            var desc = string.IsNullOrWhiteSpace(order.Description)
-                ? "" : WebUtility.HtmlEncode(order.Description.Length > 400 ? order.Description[..400] + "…" : order.Description);
+            try
+            {
+                var title = WebUtility.HtmlEncode(order.Title);
+                var budgetText = order.Budget != null ? $"\nБюджет: <b>{order.Budget}</b>" : "";
+                var desc = string.IsNullOrWhiteSpace(order.Description)
+                    ? "" : WebUtility.HtmlEncode(order.Description.Length > 400 ? order.Description[..400] + "…" : order.Description);
 
-            var text = $"<b>FL.ru: {title}</b>{budgetText}\n\n{desc}\n\n<a href=\"{order.Url}\">{order.Url}</a>";
+                var text = $"<b>FL.ru: {title}</b>{budgetText}\n\n{desc}\n\n<a href=\"{order.Url}\">{order.Url}</a>";
 
-            await _bot.SendMessage(chatId, text, ParseMode.Html);
+                await _bot.SendMessage(chatId, text, ParseMode.Html);
+            }
+            catch (ApiRequestException ex) when (ex.ErrorCode == 403 && ex.Message.Contains("blocked"))
+            {
+
+                await RemoveUserCompletelyAsync(chatId);
+            }
+            catch (Exception ex)
+            {
+
+            }
         }
 
         public async Task<List<KworkParser.KworkOrder>> GetKworkOrdersAsync(int? categoryId = null)
@@ -599,14 +601,26 @@ namespace BotParser.Services
 
         public async Task SendYoudoOrderAsync(long chatId, YoudoParser.YoudoOrder order)
         {
-            var title = WebUtility.HtmlEncode(order.Title);
-            var budgetText = order.Budget != null ? $"\nБюджет: <b>{order.Budget}</b>" : "";
-            var addressText = order.Address != null ? $"\nАдрес: <b>{order.Address}</b>" : "";
-            var dateText = order.StartDate != null ? $"\nСтарт: <b>{order.StartDate}</b>" : "";
-            var desc = order.Description != null ? $"\n\n{WebUtility.HtmlEncode(order.Description[..Math.Min(400, order.Description.Length)])}" : "";
+            try
+            {
+                var title = WebUtility.HtmlEncode(order.Title);
+                var budgetText = order.Budget != null ? $"\nБюджет: <b>{order.Budget}</b>" : "";
+                var addressText = order.Address != null ? $"\nАдрес: <b>{order.Address}</b>" : "";
+                var dateText = order.StartDate != null ? $"\nСтарт: <b>{order.StartDate}</b>" : "";
+                var desc = order.Description != null ? $"\n\n{WebUtility.HtmlEncode(order.Description[..Math.Min(400, order.Description.Length)])}" : "";
 
-            var text = $"<b>YouDo: {title}</b>{budgetText}{addressText}{dateText}{desc}\n\n<a href=\"{order.Url}\">Перейти к заданию</a>";
-            await _bot.SendMessage(chatId, text, ParseMode.Html);
+                var text = $"<b>YouDo: {title}</b>{budgetText}{addressText}{dateText}{desc}\n\n<a href=\"{order.Url}\">Перейти к заданию</a>";
+                await _bot.SendMessage(chatId, text, ParseMode.Html);
+            }
+            catch (ApiRequestException ex) when (ex.ErrorCode == 403 && ex.Message.Contains("blocked"))
+            {
+
+                await RemoveUserCompletelyAsync(chatId);
+            }
+            catch (Exception ex)
+            {
+
+            }
         }
 
         public async Task ShowIntervalSelection(long chatId, long userId, int categoryId, string platform, int? messageId = null)
@@ -749,14 +763,26 @@ namespace BotParser.Services
 
         public async Task SendFrOrderAsync(long chatId, FreelanceRuParser.FrOrder order)
         {
-            var title = WebUtility.HtmlEncode(order.Title);
-            var budget = order.Budget != null ? $"\nБюджет: <b>{order.Budget}</b>" : "";
-            var deadline = order.Deadline != null ? $"\nСрок: <b>{order.Deadline}</b>" : "";
-            var cat = order.Category != null ? $"\nКатегория: <b>{order.Category}</b>" : "";
-            var desc = order.Description != null ? "\n\n" + WebUtility.HtmlEncode(order.Description.Length > 500 ? order.Description[..500] + "…" : order.Description) : "";
+            try
+            {
+                var title = WebUtility.HtmlEncode(order.Title);
+                var budget = order.Budget != null ? $"\nБюджет: <b>{order.Budget}</b>" : "";
+                var deadline = order.Deadline != null ? $"\nСрок: <b>{order.Deadline}</b>" : "";
+                var cat = order.Category != null ? $"\nКатегория: <b>{order.Category}</b>" : "";
+                var desc = order.Description != null ? "\n\n" + WebUtility.HtmlEncode(order.Description.Length > 500 ? order.Description[..500] + "…" : order.Description) : "";
 
-            var text = $"<b>Freelance.ru: {title}</b>{budget}{deadline}{cat}{desc}\n\n<a href=\"{order.Url}\">Перейти к проекту</a>";
-            await _bot.SendMessage(chatId, text, ParseMode.Html);
+                var text = $"<b>Freelance.ru: {title}</b>{budget}{deadline}{cat}{desc}\n\n<a href=\"{order.Url}\">Перейти к проекту</a>";
+                await _bot.SendMessage(chatId, text, ParseMode.Html);
+            }
+            catch (ApiRequestException ex) when (ex.ErrorCode == 403 && ex.Message.Contains("blocked"))
+            {
+
+                await RemoveUserCompletelyAsync(chatId);
+            }
+            catch (Exception ex)
+            {
+
+            }
         }
 
         public async Task ShowWorkspaceMenu(long chatId, long userId, int? messageId = null)
@@ -797,14 +823,67 @@ namespace BotParser.Services
 
         public async Task SendWsOrderAsync(long chatId, WorkspaceRuParser.WsOrder order)
         {
-            var text = $"<b>Workspace.ru</b>\n\n" +
-                       $"<b>{order.Title}</b>\n" +
-                       $"Бюджет: <b>{order.Budget}</b>\n" +
-                       $"Дедлайн: <b>{order.Deadline}</b>\n" +
-                       $"Опубликован: {order.Published}\n\n" +
-                       $"<a href=\"{order.Url}\">Перейти к тендеру</a>";
+            try
+            {
+                var text = $"<b>Workspace.ru</b>\n\n" +
+                           $"<b>{order.Title}</b>\n" +
+                           $"Бюджет: <b>{order.Budget}</b>\n" +
+                           $"Дедлайн: <b>{order.Deadline}</b>\n" +
+                           $"Опубликован: {order.Published}\n\n" +
+                           $"<a href=\"{order.Url}\">Перейти к тендеру</a>";
 
-            await _bot.SendMessage(chatId, text, ParseMode.Html);
+                await _bot.SendMessage(chatId, text, ParseMode.Html);
+            }
+            catch (ApiRequestException ex) when (ex.ErrorCode == 403 && ex.Message.Contains("blocked"))
+            {
+
+                await RemoveUserCompletelyAsync(chatId);
+            }
+            catch (Exception ex)
+            {
+
+            }
+        }
+
+        private async Task RemoveUserCompletelyAsync(long userId)
+        {
+            // Удаляем все подписки
+            var kwork = _db.KworkCategories.Where(c => c.UserId == userId);
+            _db.KworkCategories.RemoveRange(kwork);
+
+            var fl = _db.FlCategories.Where(c => c.UserId == userId);
+            _db.FlCategories.RemoveRange(fl);
+
+            var youdo = _db.YoudoCategories.Where(c => c.UserId == userId);
+            _db.YoudoCategories.RemoveRange(youdo);
+
+            var fr = _db.FrCategories.Where(c => c.UserId == userId);
+            _db.FrCategories.RemoveRange(fr);
+
+            var ws = _db.WorkspaceCategories.Where(c => c.UserId == userId);
+            _db.WorkspaceCategories.RemoveRange(ws);
+
+            var profi = _db.ProfiCategories.Where(c => c.UserId == userId);
+            _db.ProfiCategories.RemoveRange(profi);
+
+            // Удаляем фильтры по словам
+            var keywords = _db.UserKeywordFilters.Where(k => k.UserId == userId);
+            _db.UserKeywordFilters.RemoveRange(keywords);
+
+            // Удаляем отправленные заказы (чтобы не накапливать)
+            _db.SentOrders.RemoveRange(_db.SentOrders.Where(s => s.UserTelegramId == userId));
+            _db.SentFlOrders.RemoveRange(_db.SentFlOrders.Where(s => s.UserTelegramId == userId));
+            _db.SentYoudoOrders.RemoveRange(_db.SentYoudoOrders.Where(s => s.UserTelegramId == userId));
+            _db.SentFrOrders.RemoveRange(_db.SentFrOrders.Where(s => s.UserTelegramId == userId));
+            _db.SentWsOrders.RemoveRange(_db.SentWsOrders.Where(s => s.UserTelegramId == userId));
+            _db.SentProfiOrders.RemoveRange(_db.SentProfiOrders.Where(s => s.UserTelegramId == userId));
+
+            // Удаляем самого пользователя
+            var user = await _db.Users.FindAsync(userId);
+            if (user != null)
+                _db.Users.Remove(user);
+
+            await _db.SaveChangesAsync();
         }
 
         public async Task EnableMenuButton(long chatId)
@@ -835,7 +914,30 @@ namespace BotParser.Services
                 $"Настрой интервал и фильтр по словам\r\n" +
                 $"Готово — заказы приходят автоматически";
 
-            await _bot.SendMessage(chatId, text, ParseMode.Html);
+            await _bot.SendMessage(chatId, text, ParseMode.Html, replyMarkup: _persistentMenu);
         }
+
+        private readonly ReplyKeyboardMarkup _persistentMenu = new(new[]
+        {
+            new[]
+            {
+                new KeyboardButton("📚 Главное меню"),
+                new KeyboardButton("⭐ Мои подписки")
+            }
+        })
+        {
+            ResizeKeyboard = true // кнопки под размер экрана
+        };
+
+        private string GetPlatformName(string platform) => platform.ToLower() switch
+        {
+            "kwork" => "Kwork.ru",
+            "fl" => "FL.ru",
+            "youdo" => "YouDo",
+            "fr" => "Freelance.ru",
+            "ws" => "Workspace.ru",
+            "profi" => "Profi.ru",
+            _ => platform
+        };
     }
 }

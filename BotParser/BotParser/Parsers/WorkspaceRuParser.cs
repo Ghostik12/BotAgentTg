@@ -1,5 +1,6 @@
 ﻿using BotParser.Services;
 using HtmlAgilityPack;
+using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 using System.Web;
 
@@ -10,7 +11,7 @@ namespace BotParser.Parsers
         private readonly Random _rnd = new();
         private readonly IProxyProvider _proxy;
 
-        public WorkspaceRuParser(IProxyProvider proxy) { _proxy = proxy; }
+        public WorkspaceRuParser(IProxyProvider proxy) { _proxy = proxy;}
 
         public record WsOrder(
             long TenderId,
@@ -61,7 +62,8 @@ namespace BotParser.Parsers
                 ? "https://workspace.ru/tenders/?SORT=public&ORDER=0"
                 : $"https://workspace.ru/tenders/{slug}/";
 
-            await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } });
+            //await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } });
+            await GoToWithRetry(page, url);
             await Task.Delay(_rnd.Next(5000, 8000));
 
             // Прокрутка — подгружаем все тендеры
@@ -134,6 +136,27 @@ namespace BotParser.Parsers
             }
 
             return orders;
+        }
+
+        private async Task GoToWithRetry(IPage page, string url, int maxRetries = 3)
+        {
+            for (int i = 1; i <= maxRetries; i++)
+            {
+                try
+                {
+                    await page.GoToAsync(url, new NavigationOptions
+                    {
+                        Timeout = 60000, // 60 сек
+                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 } // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!
+                    });
+                    return;
+                }
+                catch (NavigationException ex)
+                {
+                    if (i == maxRetries) throw;
+                    await Task.Delay(10000); // пауза перед повтором
+                }
+            }
         }
     }
 }

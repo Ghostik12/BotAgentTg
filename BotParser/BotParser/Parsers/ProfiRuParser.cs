@@ -74,7 +74,8 @@ namespace BotParser.Parsers
             }
 
             // Логин через POST (как в Python-скрапере — надёжно)
-            await page.GoToAsync("https://profi.ru/backoffice/n.php", new NavigationOptions { Timeout = 60000 });
+            //await page.GoToAsync("https://profi.ru/backoffice/n.php", new NavigationOptions { Timeout = 60000 });
+            await GoToWithRetry(page, "https://profi.ru/backoffice/n.php");
 
             // Ждём формы
             await page.WaitForSelectorAsync("input[placeholder='Логин или телефон']", new WaitForSelectorOptions { Timeout = 30000 });
@@ -93,7 +94,8 @@ namespace BotParser.Parsers
             }
 
             // Переходим в backoffice
-            await page.GoToAsync("https://profi.ru/backoffice/n.php", new NavigationOptions { Timeout = 60000 });
+            //await page.GoToAsync("https://profi.ru/backoffice/n.php", new NavigationOptions { Timeout = 60000 });
+            await GoToWithRetry(page, "https://profi.ru/backoffice/n.php");
             await Task.Delay(8000);
 
             // Поиск (как в Python — через поле)
@@ -150,6 +152,27 @@ namespace BotParser.Parsers
             }
 
             return orders;
+        }
+
+        private async Task GoToWithRetry(IPage page, string url, int maxRetries = 3)
+        {
+            for (int i = 1; i <= maxRetries; i++)
+            {
+                try
+                {
+                    await page.GoToAsync(url, new NavigationOptions
+                    {
+                        Timeout = 60000, // 60 сек
+                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 } // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!
+                    });
+                    return;
+                }
+                catch (NavigationException ex)
+                {
+                    if (i == maxRetries) throw;
+                    await Task.Delay(10000); // пауза перед повтором
+                }
+            }
         }
 
         private static string CleanProfiBudget(string rawText)

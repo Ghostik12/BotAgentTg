@@ -1,5 +1,6 @@
 ﻿using BotParser.Services;
 using HtmlAgilityPack;
+using Microsoft.Extensions.Logging;
 using PuppeteerSharp;
 using System.Web;
 
@@ -66,7 +67,8 @@ namespace BotParser.Parsers
                 ? $"https://kwork.ru/projects?c={categoryId.Value}"
                 : "https://kwork.ru/projects";
 
-            await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } }); // Ждём полной загрузки JS
+            //await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } }); // Ждём полной загрузки JS
+            await GoToWithRetry(page, url);
 
             await Task.Delay(_rnd.Next(3000, 5000)); // Доп. задержка для динамики
 
@@ -129,6 +131,27 @@ namespace BotParser.Parsers
             }
 
             return orders;
+        }
+
+        private async Task GoToWithRetry(IPage page, string url, int maxRetries = 3)
+        {
+            for (int i = 1; i <= maxRetries; i++)
+            {
+                try
+                {
+                    await page.GoToAsync(url, new NavigationOptions
+                    {
+                        Timeout = 60000, // 60 сек
+                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 } // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!
+                    });
+                    return;
+                }
+                catch (NavigationException ex)
+                {
+                    if (i == maxRetries) throw;
+                    await Task.Delay(10000); // пауза перед повтором
+                }
+            }
         }
     }
 }

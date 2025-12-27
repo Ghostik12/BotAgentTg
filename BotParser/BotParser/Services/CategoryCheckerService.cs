@@ -79,47 +79,53 @@ namespace BotParser.Services
                 var minutes = IntervalToMinutes(sub.NotificationInterval);
                 if (minutes <= 0) continue;
                 if ((DateTime.UtcNow - _lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue)).TotalMinutes < minutes) continue;
-
-                // Берём запрос из словаря по CategoryId
-                //var query = FreelanceService.ProfiQueries[sub.Id];
-                var parser = scope.ServiceProvider
-                .GetRequiredService<Func<long, ProfiRuParser>>()
-                .Invoke(sub.UserId);
-                var query = await db.ProfiCategories.Where(c => c.Id == sub.Id).Select(c => c.SearchQuery).ToArrayAsync();
-                var orders = await parser.GetOrdersAsync(query[0]);
-
-                var sentIds = await db.SentProfiOrders
-                    .Where(s => s.UserTelegramId == sub.UserId)
-                    .Select(s => s.OrderId)
-                    .ToHashSetAsync(ct);
-
-                foreach (var order in orders)
+                try
                 {
-                    if (sentIds.Contains(order.OrderId)) continue;
+                    // Берём запрос из словаря по CategoryId
+                    //var query = FreelanceService.ProfiQueries[sub.Id];
+                    var parser = scope.ServiceProvider
+                    .GetRequiredService<Func<long, ProfiRuParser>>()
+                    .Invoke(sub.UserId);
+                    var query = await db.ProfiCategories.Where(c => c.Id == sub.Id).Select(c => c.SearchQuery).ToArrayAsync();
+                    var orders = await parser.GetOrdersAsync(query[0]);
 
-                    bool matches = await freelance.TitleContainsKeyword(
-                        sub.UserId,
-                        "profi",
-                        sub.Id,
-                        order.Title + " " + order.Description);
+                    var sentIds = await db.SentProfiOrders
+                        .Where(s => s.UserTelegramId == sub.UserId)
+                        .Select(s => s.OrderId)
+                        .ToHashSetAsync(ct);
 
-                    if (!matches) continue;
-
-                    await freelance.SendProfiOrderAsync(sub.UserId, order, sub.Id);
-
-                    await db.SentProfiOrders.AddAsync(new SentProfiOrder
+                    foreach (var order in orders)
                     {
-                        OrderId = order.OrderId,
-                        UserTelegramId = sub.UserId,
-                        SentAt = DateTime.UtcNow,
-                        
-                    });
+                        if (sentIds.Contains(order.OrderId)) continue;
 
-                    await Task.Delay(600, ct);
+                        bool matches = await freelance.TitleContainsKeyword(
+                            sub.UserId,
+                            "profi",
+                            sub.Id,
+                            order.Title + " " + order.Description);
+
+                        if (!matches) continue;
+
+                        await freelance.SendProfiOrderAsync(sub.UserId, order, sub.Id);
+
+                        await db.SentProfiOrders.AddAsync(new SentProfiOrder
+                        {
+                            OrderId = order.OrderId,
+                            UserTelegramId = sub.UserId,
+                            SentAt = DateTime.UtcNow,
+
+                        });
+
+                        await Task.Delay(600, ct);
+                    }
+
+                    if (orders.Any()) await db.SaveChangesAsync(ct);
+                    _lastCheckTimes[key] = DateTime.UtcNow;
                 }
-
-                if (orders.Any()) await db.SaveChangesAsync(ct);
-                _lastCheckTimes[key] = DateTime.UtcNow;
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Ошибка парсинга Profi для пользователя {UserId}, категория {CatId}", sub.UserId, sub.Name);
+                }
             }
         }
 
@@ -140,45 +146,51 @@ namespace BotParser.Services
                 var minutes = IntervalToMinutes(sub.NotificationInterval);
                 if (minutes <= 0) continue;
                 if ((DateTime.UtcNow - _lastCheckTimes.GetValueOrDefault(key, DateTime.MinValue)).TotalMinutes < minutes) continue;
-
-                var slug = sub.CategorySlug == 1 ? 1 : sub.CategorySlug;
-                var tenders = await parser.GetActiveTendersAsync(slug);
-                var sent = await db.SentWsOrders
-                    .Where(s => s.UserTelegramId == sub.UserId)
-                    .Select(s => s.TenderId)
-                    .ToHashSetAsync(ct);
-
-                var newTenders = tenders.Where(t => !sent.Contains(t.TenderId)).Take(7).ToList();
-
-                foreach (var tender in newTenders)
+                try
                 {
-                    // 1. Уже отправляли этому пользователю?
-                    if (sent.Contains(tender.TenderId)) continue;
+                    var slug = sub.CategorySlug == 1 ? 1 : sub.CategorySlug;
+                    var tenders = await parser.GetActiveTendersAsync(slug);
+                    var sent = await db.SentWsOrders
+                        .Where(s => s.UserTelegramId == sub.UserId)
+                        .Select(s => s.TenderId)
+                        .ToHashSetAsync(ct);
 
-                    // 2. Проверяем ключевые слова ТОЛЬКО для этой рубрики
-                    bool matches = await _freelance.TitleContainsKeyword(
-                        sub.UserId,
-                        "workspace",
-                        sub.CategorySlug,
-                        tender.Title);
+                    var newTenders = tenders.Where(t => !sent.Contains(t.TenderId)).Take(7).ToList();
 
-                    if (!matches) continue; // ← НЕ присылаем, если не подходит
-
-                    // 3. Отправляем!
-                    await _freelance.SendWsOrderAsync(sub.UserId, tender);
-
-                    await db.SentWsOrders.AddAsync(new SentWsOrder
+                    foreach (var tender in newTenders)
                     {
-                        TenderId = tender.TenderId,
-                        UserTelegramId = sub.UserId,
-                        SentAt = DateTime.UtcNow,
-                    });
+                        // 1. Уже отправляли этому пользователю?
+                        if (sent.Contains(tender.TenderId)) continue;
 
-                    await Task.Delay(1000, ct);
+                        // 2. Проверяем ключевые слова ТОЛЬКО для этой рубрики
+                        bool matches = await _freelance.TitleContainsKeyword(
+                            sub.UserId,
+                            "workspace",
+                            sub.CategorySlug,
+                            tender.Title);
+
+                        if (!matches) continue; // ← НЕ присылаем, если не подходит
+
+                        // 3. Отправляем!
+                        await _freelance.SendWsOrderAsync(sub.UserId, tender);
+
+                        await db.SentWsOrders.AddAsync(new SentWsOrder
+                        {
+                            TenderId = tender.TenderId,
+                            UserTelegramId = sub.UserId,
+                            SentAt = DateTime.UtcNow,
+                        });
+
+                        await Task.Delay(1000, ct);
+                    }
+
+                    if (newTenders.Any()) await db.SaveChangesAsync(ct);
+                    _lastCheckTimes[key] = DateTime.UtcNow;
                 }
-
-                if (newTenders.Any()) await db.SaveChangesAsync(ct);
-                _lastCheckTimes[key] = DateTime.UtcNow;
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Ошибка парсинга Workspace для пользователя {UserId}, категория {CatId}", sub.UserId, sub.CategorySlug);
+                }
             }
         }
 
@@ -245,7 +257,7 @@ namespace BotParser.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Ошибка парсинга Freelance.ru: {ex.Message}");
+                    _log.LogWarning(ex, "Ошибка парсинга Freelance для пользователя {UserId}, категория {CatId}", sub.UserId, sub.CategoryId);
                 }
             }
         }
@@ -310,7 +322,7 @@ namespace BotParser.Services
                 }
                 catch (Exception ex)
                 {
-                    // Лог
+                    _log.LogWarning(ex, "Ошибка парсинга Youdo для пользователя {UserId}, категория {CatId}", sub.UserId, sub.CategoryId);
                 }
             }
         }

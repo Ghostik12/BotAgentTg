@@ -1,6 +1,7 @@
 ﻿using BotParser.Services;
 using HtmlAgilityPack;
 using PuppeteerSharp;
+using Serilog;
 using System.Web;
 
 namespace BotParser.Parsers
@@ -9,6 +10,11 @@ namespace BotParser.Parsers
     {
         private readonly Random _rnd = new();
         private readonly IProxyProvider _proxy;
+
+        public YoudoParser(IProxyProvider proxy)
+        {
+            _proxy = proxy;
+        }
 
         public record YoudoOrder(
             long TaskId,
@@ -60,26 +66,66 @@ namespace BotParser.Parsers
 
             // URL не меняется, но для категории кликнем (если нужно)
             var url = "https://youdo.com/tasks-all-opened-all";
-            await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } });
+            await page.GoToAsync(url, new NavigationOptions
+            {
+                WaitUntil = new[] { WaitUntilNavigation.DOMContentLoaded }, // ← Это главное!
+                Timeout = 30000 // 30 секунд максимум
+            });
+
+            await Task.Delay(5000); // Даём React подгрузи
 
             // Если категория — симулируем клик (YouDo SPA, URL не меняется, но JS фильтрует)
             if (categoryId.HasValue && categoryId != 0)
             {
-                // Клик по категории (селектор по названию, добавь if для каждой)
-                var catSelector = GetCategorySelector(categoryId.Value); // см. метод ниже
-                await page.EvaluateExpressionAsync($@"
-        () => {{
-            const checkbox = document.querySelector('input[type=""checkbox""][value=""{catSelector}""]');
-            if (checkbox) {{
-                checkbox.checked = true;
-                checkbox.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                checkbox.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                checkbox.closest('div.Checkbox_container__lCn3m')?.click();
-            }}
-        }}
-    ");
+                var value = GetCategorySelector(categoryId.Value); // "Дизайн", "Курьерские услуги" и т.д.
 
-                await Task.Delay(4000); // ждём подгрузки заказов
+                // СНИМАЕМ "Все категории" (на всякий случай)
+                var rest = await page.EvaluateFunctionAsync<bool>(@"
+        () => {
+            const allLabel = Array.from(document.querySelectorAll('label.Checkbox_label__uNY3B'))
+                .find(l => l.textContent.trim() === 'Все категории');
+            if (allLabel) allLabel.click();
+        }
+    ");
+                //if (rest)
+                //    Console.WriteLine("Good");
+
+                await Task.Delay(2000);
+
+                // 2.КЛИКАЕМ ПО LABEL С НУЖНЫМ ТЕКСТОМ
+    var clicked = await page.EvaluateFunctionAsync<bool>(@"
+        (name) => {
+            const labels = Array.from(document.querySelectorAll('label.Checkbox_label__uNY3B'));
+            const targetLabel = labels.find(l => l.textContent.trim() === name);
+            if (targetLabel) {
+                targetLabel.click();
+                return true;
+            }
+            return false;
+        }", value);
+
+                if (clicked)
+                {
+                    Console.WriteLine($"Категория YouDo value={value} выбрана");
+                }
+                else
+                {
+                    Console.WriteLine($"Не удалось найти или кликнуть категорию YouDo value={value}");
+                }
+
+                // Ждём подгрузки заказов — но НЕ падаем, если их нет
+                try
+                {
+                    await page.WaitForSelectorAsync("li.TasksList_listItem__2Yurg", new WaitForSelectorOptions { Timeout = 12000 });
+                    Console.WriteLine("Заказы в категории подгружены");
+                }
+                catch (WaitTaskTimeoutException)
+                {
+                    Console.WriteLine($"В категории YouDo value={value} пока нет заказов — возвращаем пустой список");
+                    // Ничего не делаем — просто продолжаем, orders будет пустой
+                }
+
+                await Task.Delay(3000); // небольшая страховка
             }
 
             await Task.Delay(_rnd.Next(4000, 6000));
@@ -143,22 +189,22 @@ namespace BotParser.Parsers
         // Селекторы для клика по категориям (YouDo SPA — кликай по тексту)
         private string GetCategorySelector(int catId) => catId switch
         {
-            1 => "text=Курьерские услуги", // Используй page.ClickAsync("text=Название")
-            2 => "text=Ремонт и строительство",
-            3 => "text=Грузоперевозки",
-            4 => "text=Уборка и помощь по хозяйству",
-            5 => "text=Виртуальный помощник",
-            6 => "text=Компьютерная помощь",
-            7 => "text=Мероприятия и промоакции",
-            8 => "text=Дизайн",
-            9 => "text=Разработка ПО",
-            10 => "text=Фото, видео и аудио",
-            11 => "text=Установка и ремонт техники",
-            12 => "text=Красота и здоровье",
-            13 => "text=Ремонт цифровой техники",
-            14 => "text=Юридическая и бухгалтерская помощь",
-            15 => "text=Репетиторы и обучение",
-            16 => "text=Ремонт транспорта",
+            1 => "Курьерские услуги", // Используй page.ClickAsync("text=Название")
+            2 => "Ремонт и строительство",
+            3 => "Грузоперевозки",
+            4 => "Уборка и помощь по хозяйству",
+            5 => "Виртуальный помощник",
+            6 => "Компьютерная помощь",
+            7 => "Мероприятия и промоакции",
+            8 => "Дизайн",
+            9 => "Разработка ПО",
+            10 => "Фото, видео и аудио",
+            11 => "Установка и ремонт техники",
+            12 => "Красота и здоровье",
+            13 => "Ремонт цифровой техники",
+            14 => "Юридическая и бухгалтерская помощь",
+            15 => "Репетиторы и обучение",
+            16 => "Ремонт транспорта",
             _ => ""
         };
     }
