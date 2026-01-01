@@ -49,7 +49,7 @@ namespace BotParser
                 client.DefaultRequestHeaders.Add("Referer", "https://youdo.com/tasks");
             });
             builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-                new TelegramBotClient("8537792489:AAGZXlowJn2UTzAIZ2hwJxQahyG52aUU"));
+                new TelegramBotClient("8537792489:AAGZXlowJn2UTzAIZ2hwJxQahyG52aUUk9w"));
             builder.Services.Configure<MobileProxyConfig>(
     builder.Configuration.GetSection("MobileProxy"));
 
