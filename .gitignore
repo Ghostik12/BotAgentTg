@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/BotParser/BotParser/appsettings.json
+/BotParser/VkBotParser/VkBotParser/appsettings.json
+/BotParser/BotParser/Program.cs
