@@ -1,8 +1,12 @@
 ﻿using BotParser.Db;
+using BotParser.Models;
 using BotParser.Parsers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
 using Serilog;
 using System.Net;
+using System.Text;
+using System.Threading;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
@@ -939,5 +943,160 @@ namespace BotParser.Services
             "profi" => "Profi.ru",
             _ => platform
         };
+
+        public async Task AdminPanel(long id, int? msgId = null)
+        {
+            if (id != 1451999567 && id != 150377240)
+            {
+                await _bot.SendMessage(id, "Доступ запрещён. Только для админа.");
+                return;
+            }
+
+            var inlineKeyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[] { InlineKeyboardButton.WithCallbackData("Данные пользователей", "users_data") },
+                new[] { InlineKeyboardButton.WithCallbackData("Новые регистрации", "users_new") },
+                new[] { InlineKeyboardButton.WithCallbackData("Активные пользователи", "users_active") },
+                new[] { InlineKeyboardButton.WithCallbackData("Назад", "main_menu")}
+            });
+            if (msgId.HasValue)
+                await _bot.EditMessageText(id, msgId.Value, "Админ-панель:", replyMarkup: inlineKeyboard);
+            else
+                await _bot.SendMessage(id, "Админ-панель:", replyMarkup: inlineKeyboard);
+        }
+
+        public async Task NewUsers(long userId, int msgId)
+        {
+            var inlineKeyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[] { InlineKeyboardButton.WithCallbackData("За месяц", "users_month") },
+                new[] { InlineKeyboardButton.WithCallbackData("За неделю", "users_week") },
+                new[] { InlineKeyboardButton.WithCallbackData("За день", "users_day") },
+                new[] { InlineKeyboardButton.WithCallbackData("Назад", "users_back")}
+            });
+
+            await _bot.EditMessageText(userId, msgId, "Выберите период для новых регистраций:", replyMarkup: inlineKeyboard);
+        }
+
+        public async Task HandleNewRegistrationsPeriodAsync(CallbackQuery callbackQuery, string period, CancellationToken cancellationToken)
+        {
+            var now = DateTime.UtcNow;
+            DateTime fromDate = period switch
+            {
+                "month" => now.AddMonths(-1),
+                "week" => now.AddDays(-7),
+                "day" => now.AddDays(-1),
+                _ => now
+            };
+
+            var newUsersCount = await _db.Users
+                .CountAsync(u => u.CreatedAt >= fromDate, cancellationToken);
+
+            var periodText = period switch
+            {
+                "month" => "за месяц",
+                "week" => "за неделю",
+                "day" => "за день",
+                _ => ""
+            };
+
+            var inlineKeyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[] { InlineKeyboardButton.WithCallbackData("За месяц", "users_month") },
+                new[] { InlineKeyboardButton.WithCallbackData("За неделю", "users_week") },
+                new[] { InlineKeyboardButton.WithCallbackData("За день", "users_day") },
+                new[] { InlineKeyboardButton.WithCallbackData("Назад", "users_back")}
+            });
+
+            await _bot.EditMessageText(callbackQuery.Message.Chat.Id, callbackQuery.Message.MessageId, $"Новых регистраций {periodText}: {newUsersCount}", cancellationToken: cancellationToken, replyMarkup: inlineKeyboard);
+        }
+
+        public async Task ActiveUsers(long userId, int msgId, CancellationToken cancellationToken)
+        {
+            // Собираем все UserId, где хотя бы одна подписка активна
+            var activeUserIdsQuery =
+                _db.KworkCategories
+                    .Where(c => c.NotificationInterval != "off")
+                    .Select(c => c.UserId)
+                .Union(
+                    _db.FlCategories
+                        .Where(c => c.NotificationInterval != "off")
+                        .Select(c => c.UserId)
+                )
+                .Union(
+                    _db.FrCategories
+                        .Where(c => c.NotificationInterval != "off")
+                        .Select(c => c.UserId)
+                )
+                .Union(
+                    _db.ProfiCategories
+                        .Where(c => c.NotificationInterval != "off")
+                        .Select(c => c.UserId)
+                )
+                .Union(
+                    _db.WorkspaceCategories
+                        .Where(c => c.NotificationInterval != "off")
+                        .Select(c => c.UserId)
+                )
+                .Union(
+                    _db.YoudoCategories
+                        .Where(c => c.NotificationInterval != "off")
+                        .Select(c => c.UserId)
+                );
+
+            // Получаем уникальное количество
+            int activeCount = await activeUserIdsQuery.Distinct().CountAsync(cancellationToken);
+
+            int totalUsers = await _db.Users.CountAsync(cancellationToken);
+            int inactiveCount = totalUsers - activeCount;
+
+            var message = $"Активные пользователи: **{activeCount}**\n" +
+                          $"Неактивные пользователи: **{inactiveCount}**\n" +
+                          $"Всего пользователей: **{totalUsers}**";
+
+            var inlineKeyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[] { InlineKeyboardButton.WithCallbackData("Назад", "users_back")}
+            });
+
+            await _bot.EditMessageText(
+                userId,
+                msgId,
+                message,
+                parseMode: ParseMode.Markdown,
+                cancellationToken: cancellationToken,
+                replyMarkup: inlineKeyboard
+            );
+        }
+
+        public async Task DataUsers(long userId, int msgId, CancellationToken cancellationToken)
+        {
+            var users = await _db.Users
+                .Select(u => new { u.Id, Username = u.Username ?? "Нет username" })
+                .ToListAsync(cancellationToken);
+
+            var filePath = "users_data.txt";
+            using (var writer = new StreamWriter(filePath, false, Encoding.UTF8))
+            {
+                foreach (var user in users)
+                {
+                    await writer.WriteLineAsync($"ID: {user.Id}, Username: {user.Username}");
+                }
+            }
+
+            await using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+
+            var inputFile = InputFile.FromStream(fileStream, "users_data.txt");
+
+            var inlineKeyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[] { InlineKeyboardButton.WithCallbackData("Меню", "users_back")}
+            });
+
+            await _bot.SendDocument(userId, inputFile, caption: "Данные пользователей", cancellationToken: cancellationToken);
+            await _bot.SendMessage(userId, "Меню админа:", replyMarkup: inlineKeyboard);
+
+            File.Delete(filePath); // Удаляем файл
+        }
     }
 }

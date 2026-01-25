@@ -29,7 +29,7 @@ namespace VkBotParser
 
             while (true)
             {
-                var updates = await _api.Groups.GetBtsAsync(longPoll.Server, longPoll.Key, longPoll.Ts);
+                var updates = await _api.Groups.GetAsync(longPoll.Server, longPoll.Key, longPoll.Ts);//?
 
                 foreach (var update in updates.Updates)
                 {

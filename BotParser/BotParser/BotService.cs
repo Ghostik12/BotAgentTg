@@ -212,6 +212,11 @@ namespace BotParser
                 return;
             }
 
+            if(update.Message?.Text == "/adminthebest")
+            {
+                await _freelance.AdminPanel(update.Message.Chat.Id);
+            }
+
             if (update.Message?.Text == "/menu" || update.Message?.Text == "📚 Главное меню")
             {
                 await _freelance.ShowMainMenu(update.Message.Chat.Id);
@@ -247,7 +252,41 @@ namespace BotParser
                     await _freelance.ShowFlMenu(chatId, userId, msgId);
 
                 else if (data == "my_subscriptions")
+                {
+
                     await _freelance.ShowMySubscriptions(chatId, userId, msgId);
+                }
+
+                else if (data.StartsWith("users_"))
+                {
+                    var parts = data["users_".Length..].Split('_');
+                    var method = parts[0];
+
+                    switch (method)
+                    {
+                        case "new":
+                            await _freelance.NewUsers(userId, msgId);
+                            break;
+                        case "active":
+                            await _freelance.ActiveUsers(userId, msgId, ct);
+                            break;
+                        case "data":
+                            await _freelance.DataUsers(userId, msgId, ct);
+                            break;
+                        case "back":
+                            await _freelance.AdminPanel(userId, msgId);
+                            break;
+                        case "month":
+                            await _freelance.HandleNewRegistrationsPeriodAsync(cb, method, ct);
+                            break;
+                        case "week":
+                            await _freelance.HandleNewRegistrationsPeriodAsync(cb, method, ct);
+                            break;
+                        case "day":
+                            await _freelance.HandleNewRegistrationsPeriodAsync(cb, method, ct);
+                            break;
+                    };
+                }
 
                 else if (data.StartsWith("my_subs_"))
                 {
@@ -586,7 +625,7 @@ namespace BotParser
                         var buttons = new[]
                         {
                             new[] { InlineKeyboardButton.WithCallbackData("Да", "profi_yes") },
-                            new[] { InlineKeyboardButton.WithCallbackData("Нет", "profi_no") } 
+                            new[] { InlineKeyboardButton.WithCallbackData("Нет", "profi_no") }
                         };
 
                         var markup = new InlineKeyboardMarkup(buttons);
@@ -596,7 +635,7 @@ namespace BotParser
                     await _bot.AnswerCallbackQuery(callbackQueryId: cb.Id);
                 }
 
-                else if(data == "profi_yes")
+                else if (data == "profi_yes")
                 {
                     await _bot.SendMessage(chatId, "Введите логин:");
                     userStates[userId] = WaitingProfiLogin;

@@ -1,14 +1,13 @@
-﻿using BotParser.Db;
-using BotParser.Models;
-using BotParser.Parsers;
+﻿using VkBotParser.Db;
+using VkBotParser.Models;
+using VkBotParser.Parsers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Telegram.Bot.Types;
 
 
-namespace BotParser.Services
+namespace VkBotParser.Services
 {
     public class CategoryCheckerService : BackgroundService
     {
@@ -35,15 +34,15 @@ namespace BotParser.Services
             {
                 try
                 {
-                    //// РОТАЦИЯ IP КАЖДЫЕ 10 МИНУТ
-                    //if (DateTime.UtcNow - _lastRotation > TimeSpan.FromMinutes(10))
-                    //{
-                    //    var newIp = await _proxyService.RotateAndVerifyIpAsync(_log);
-                    //    if (newIp != null)
-                    //        _lastRotation = DateTime.UtcNow;
-                    //    else
-                    //        _lastRotation = DateTime.UtcNow.AddMinutes(3); // повтор через 3 мин, если не вышло
-                    //}
+                    // РОТАЦИЯ IP КАЖДЫЕ 10 МИНУТ
+                    if (DateTime.UtcNow - _lastRotation > TimeSpan.FromMinutes(10))
+                    {
+                        var newIp = await _proxyService.RotateAndVerifyIpAsync(_log);
+                        if (newIp != null)
+                            _lastRotation = DateTime.UtcNow;
+                        else
+                            _lastRotation = DateTime.UtcNow.AddMinutes(3); // повтор через 3 мин, если не вышло
+                    }
 
                     await CheckKworkSubscriptions(ct);
                     await CheckFlSubscriptions(ct);

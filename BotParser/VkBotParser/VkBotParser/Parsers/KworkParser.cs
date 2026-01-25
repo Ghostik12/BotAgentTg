@@ -1,0 +1,157 @@
+﻿using BotParser.Services;
+using HtmlAgilityPack;
+using Microsoft.Extensions.Logging;
+using PuppeteerSharp;
+using System.Web;
+
+namespace VkBotParser.Parsers
+{
+    public class KworkParser
+    {
+        private readonly Random _rnd = new();
+        private readonly IProxyProvider _proxy;
+
+        public KworkParser(IProxyProvider proxy)
+        {
+            _proxy = proxy;
+        }
+
+        public record KworkOrder(
+            string Title,
+            string Url,
+            string? DesiredBudget,
+            string? AllowedBudget,
+            string? Description,
+            long ProjectId,
+            //bool AlreadyViewed,
+            DateTime ParsedAt);
+
+        public async Task<List<KworkOrder>> GetNewOrdersAsync(int? categoryId = null)
+        {
+            var orders = new List<KworkOrder>();
+
+            // Запускаем headless Chrome
+            await new BrowserFetcher().DownloadAsync();
+            var args = new List<string>
+        {
+            "--no-sandbox", "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage", "--disable-gpu",
+            "--no-zygote", "--single-process"
+        };
+
+            if (_proxy.IsEnabled)
+            {
+                args.Add($"--proxy-server={_proxy.Host}:{_proxy.Port}");
+            }
+
+            await using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+            {
+                Headless = true,
+                Args = args.ToArray()
+            });
+
+            using var page = await browser.NewPageAsync();
+
+            // Настраиваем браузер как реальный юзер
+            await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+            await page.SetViewportAsync(new ViewPortOptions { Width = 1920, Height = 1080 });
+            if (_proxy.IsEnabled)
+            {
+                await page.AuthenticateAsync(new Credentials
+                {
+                    Username = _proxy.Username,
+                    Password = _proxy.Password
+                });
+            }
+            var url = categoryId.HasValue && categoryId.Value != 0
+                ? $"https://kwork.ru/projects?c={categoryId.Value}"
+                : "https://kwork.ru/projects";
+
+            //await page.GoToAsync(url, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } }); // Ждём полной загрузки JS
+            await GoToWithRetry(page, url);
+
+            await Task.Delay(_rnd.Next(3000, 5000)); // Доп. задержка для динамики
+
+            // Получаем готовый HTML после JS
+            var html = await page.GetContentAsync();
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            // Точный селектор для карточек (из твоего HTML)
+            var cards = doc.DocumentNode.SelectNodes("//div[contains(@class, 'want-card--list')]");
+            if (cards == null) return orders;
+
+            foreach (var card in cards.Take(15))
+            {
+                try
+                {
+                    // Заголовок (теперь точно не null, потому что JS загрузил)
+                    var titleNode = card.SelectSingleNode(".//h1[contains(@class, 'wants-card__header-title')]//a");
+                    if (titleNode == null) continue;
+
+                    var title = HttpUtility.HtmlDecode(titleNode.InnerText.Trim());
+                    var relativeUrl = titleNode.GetAttributeValue("href", "");
+                    if (!relativeUrl.StartsWith("/projects/")) continue;
+
+                    var fullUrl = "https://kwork.ru" + relativeUrl;
+
+                    long projectId = 0;
+                    var match = System.Text.RegularExpressions.Regex.Match(relativeUrl, @"/projects/(\d+)");
+                    if (match.Success)
+                    {
+                        long.TryParse(match.Groups[1].Value, out projectId);
+                    }
+
+                    // Описание (только видимая часть)
+                    var descNode = card.SelectSingleNode(".//div[contains(@class, 'wants-card__description-text')]//div[contains(@class, 'overflow-hidden')]//div[contains(@class, 'breakwords')]");
+                    var description = descNode != null
+                        ? HttpUtility.HtmlDecode(descNode.InnerText.Trim()).Replace("Задача:", "").Replace("\n", " ").Trim()
+                        : null;
+
+                    // Желаемый бюджет
+                    var desiredNode = card.SelectSingleNode(".//div[contains(@class, 'wants-card__price')]//div[contains(@class, 'd-inline')]");
+                    var desiredBudget = desiredNode?.InnerText.Trim() + " ₽";
+
+                    // Допустимый бюджет
+                    var allowedNode = card.SelectSingleNode(".//div[contains(@class, 'wants-card__description-higher-price')]//div[contains(@class, 'd-inline')]");
+                    var allowedBudget = allowedNode != null ? "до " + allowedNode.InnerText.Trim() + " ₽" : null;
+
+                    orders.Add(new KworkOrder(
+                        Title: title,
+                        Url: fullUrl,
+                        DesiredBudget: desiredBudget,
+                        AllowedBudget: allowedBudget,
+                        Description: description,
+                        ProjectId: projectId,
+                        //AlreadyViewed: alreadyViewed,
+                        ParsedAt: DateTime.UtcNow
+                    ));
+                }
+                catch { continue; }
+            }
+
+            return orders;
+        }
+
+        private async Task GoToWithRetry(IPage page, string url, int maxRetries = 3)
+        {
+            for (int i = 1; i <= maxRetries; i++)
+            {
+                try
+                {
+                    await page.GoToAsync(url, new NavigationOptions
+                    {
+                        Timeout = 60000, // 60 сек
+                        WaitUntil = new[] { WaitUntilNavigation.Networkidle2 } // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!
+                    });
+                    return;
+                }
+                catch (NavigationException ex)
+                {
+                    if (i == maxRetries) throw;
+                    await Task.Delay(10000); // пауза перед повтором
+                }
+            }
+        }
+    }
+}
