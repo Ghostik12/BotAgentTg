@@ -17,7 +17,6 @@ namespace BotParser.Services
         private readonly Dictionary<string, DateTime> _lastCheckTimes = new();
         private readonly FreelanceService _freelance;
         private readonly MobileProxyService _proxyService;
-        private DateTime _lastRotation = DateTime.MinValue;
 
         public CategoryCheckerService(IServiceProvider sp, ILogger<CategoryCheckerService> log, FreelanceService freelance, MobileProxyService mobileProxyService)
         {
@@ -31,19 +30,18 @@ namespace BotParser.Services
         {
             _log.LogInformation("CategoryCheckerService запущен");
 
+            using var ipRotationTimer = new PeriodicTimer(TimeSpan.FromMinutes(10));
+
+            await TryRotateIpAsync();
+
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
-                    //// РОТАЦИЯ IP КАЖДЫЕ 10 МИНУТ
-                    //if (DateTime.UtcNow - _lastRotation > TimeSpan.FromMinutes(10))
-                    //{
-                    //    var newIp = await _proxyService.RotateAndVerifyIpAsync(_log);
-                    //    if (newIp != null)
-                    //        _lastRotation = DateTime.UtcNow;
-                    //    else
-                    //        _lastRotation = DateTime.UtcNow.AddMinutes(3); // повтор через 3 мин, если не вышло
-                    //}
+                    if (await ipRotationTimer.WaitForNextTickAsync(ct))
+                    {
+                        await TryRotateIpAsync();
+                    }
 
                     await CheckKworkSubscriptions(ct);
                     await CheckFlSubscriptions(ct);
@@ -60,6 +58,19 @@ namespace BotParser.Services
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(60), ct);
+            }
+        }
+
+        private async Task TryRotateIpAsync()
+        {
+            var newIp = await _proxyService.RotateAndVerifyIpAsync(_log);
+            if (newIp != null)
+            {
+                _log.LogInformation("IP успешно сменён на {NewIp}", newIp);
+            }
+            else
+            {
+                _log.LogWarning("Не удалось сменить IP, следующая попытка через 10 минут");
             }
         }
 
