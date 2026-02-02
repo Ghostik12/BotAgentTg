@@ -1,5 +1,5 @@
 ﻿using VkBotParser.Db;
-using BotParser.Services;
+using VkBotParser.Services;
 using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;

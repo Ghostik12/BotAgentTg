@@ -1,4 +1,4 @@
-﻿using BotParser.Services;
+﻿using VkBotParser.Services;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using PuppeteerSharp;

@@ -1,16 +1,70 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using VkBotParser;
 using VkBotParser.Db;
+using VkBotParser.Models;
 
-var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-var logger = loggerFactory.CreateLogger<VkBot>();
+namespace VkBotParser
+{
+    class Program
+    {
+        private const ulong GroupId = 235726596; // положительный ID группы, UL — чтобы ulong
 
-var options = new DbContextOptionsBuilder<KworkBotDbContext>()
-    .UseSqlite("Data Source=bot.db")
-    .Options;
+        private static readonly HttpClient HttpClient = new HttpClient();
 
-using var db = new KworkBotDbContext(options);
+        static async Task Main(string[] args)
+        {
+            var host = Host.CreateDefaultBuilder(args)
+                .ConfigureServices((hostContext, services) =>
+                {
+                    // База данных
+                    services.AddDbContext<KworkBotDbContext>(options =>
+                        options.UseSqlite("Data Source=bot.db"));
 
-var vkBot = new VkBot(logger, db);
-await vkBot.RunAsync("ТВОЙ_ACCESS_TOKEN_ИЗ_VK");
+                    // Логирование (консоль + можно добавить файл/Serilog)
+                    services.AddLogging(logging =>
+                    {
+                        logging.AddConsole();
+                        // logging.AddDebug();
+                    });
+
+                    // Привязываем секцию "Vk" из конфига
+                    services.Configure<VkSettings>(hostContext.Configuration.GetSection("Vk"));
+
+                    // Регистрируем бота
+                    services.AddSingleton<VkBot>();
+                })
+                .Build();
+
+            var config = host.Services.GetRequiredService<IConfiguration>();
+
+            string accessToken = config["Vk:AccessToken"]
+                ?? Environment.GetEnvironmentVariable("VK_TOKEN")
+                ?? throw new InvalidOperationException("Токен не найден");
+
+            // Получаем сервисы
+            var bot = host.Services.GetRequiredService<VkBot>();
+
+            // Токен лучше не хардкодить, но для теста можно так
+            //string accessToken = "vk1.a.твой_токен_группы_здесь";
+
+            try
+            {
+                Console.WriteLine("Запуск VK бота...");
+                await bot.RunAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Критическая ошибка запуска бота:");
+                Console.WriteLine(ex);
+            }
+
+            // Чтобы приложение не завершилось сразу после ошибки
+            Console.WriteLine("Нажмите любую клавишу для выхода...");
+            Console.ReadKey();
+        }
+    }
+}
