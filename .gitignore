@@ -364,3 +364,4 @@ FodyWeavers.xsd
 /BotParser/BotParser/appsettings.json
 /BotParser/VkBotParser/VkBotParser/appsettings.json
 /BotParser/BotParser/Program.cs
+/BotParser/ParserFlightTickets/ParserFlightTickets/appsettings.json
