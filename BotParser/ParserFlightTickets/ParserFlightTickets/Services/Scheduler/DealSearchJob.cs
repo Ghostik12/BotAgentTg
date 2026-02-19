@@ -2,10 +2,12 @@
 using Microsoft.Extensions.Logging;
 using ParserFlightTickets.Config;
 using ParserFlightTickets.Services.Api;
+using ParserFlightTickets.Services.Data;
 using ParserFlightTickets.Services.Telegram;
 using Quartz;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -24,25 +26,39 @@ namespace ParserFlightTickets.Services.Scheduler
 
         public async Task Execute(IJobExecutionContext context)
         {
-            _logger.LogInformation("DealSearchJob запущен в {Time}", DateTime.UtcNow);
-
-            var config = _serviceProvider.GetRequiredService<BotConfig>();
+            var settings = _serviceProvider.GetRequiredService<SettingsService>();
             var apiService = _serviceProvider.GetRequiredService<TravelPayoutsService>();
             var publisher = _serviceProvider.GetRequiredService<TelegramPublisher>();
 
-            var origins = config.SearchSettings.RussianCities;
-            var destinations = config.SearchSettings.PopularDestinations;
-            var priorityOrigins = config.SearchSettings.PriorityRussianCities;
-            var priorityDestinations = config.SearchSettings.PriorityPopularDestinations;
+            // 1. Проверки перед запуском
+            if (settings.IsNightPauseActive())
+            {
+                _logger.LogInformation("Ночная пауза активна — пропускаем");
+                return;
+            }
 
-            int published = 0;
-            var publishedHashes = new HashSet<string>(); // для простого антидубликата (пока в памяти)
+            if (!settings.CanPublishToday("flight"))
+            {
+                _logger.LogInformation("Лимит постов за день достигнут");
+                return;
+            }
+
+            var origins = settings.GetList("Flights_DepartureCities");
+            var destinations = settings.GetList("Flights_Destinations");
+            var priorityOrigins = settings.GetList("Flights_PriorityDeparture");
+            var priorityDestinations = settings.GetList("Flights_PriorityDestinations");
+
+            if (!origins.Any() || !destinations.Any())
+            {
+                _logger.LogWarning("Нет городов для поиска рейсов");
+                return;
+            }
 
             var random = new Random();
             string origin, dest;
 
-            // 80% шанс на приоритетную пару
-            if (random.NextDouble() < 0.8 && priorityOrigins.Any() && priorityDestinations.Any())
+            bool canUsePriority = priorityOrigins.Any() && priorityDestinations.Any();
+            if (canUsePriority && random.NextDouble() < 0.8)
             {
                 origin = priorityOrigins[random.Next(priorityOrigins.Count)];
                 dest = priorityDestinations[random.Next(priorityDestinations.Count)];
@@ -53,91 +69,293 @@ namespace ParserFlightTickets.Services.Scheduler
                 dest = destinations[random.Next(destinations.Count)];
             }
 
-            if (origin == dest) return;
-            try 
-            { 
-            // Запрос
-            var deals = await apiService.SearchOneWayByPriceRangeAsync(
-                origin, dest,
-                minPrice: config.SearchSettings.MinPrice,
-                maxPrice: config.SearchSettings.MaxPrice,
-                directOnly: false,          // можно true, если хочешь только прямые
-                limit: 5                    // берём до 5 вариантов, потом выберем лучший
-            );
+            if (origin == dest)
+            {
+                _logger.LogDebug("Пропущен маршрут в один город");
+                return;
+            }
 
-            if (deals == null || !deals.Any()) return;
+            // 2. Настройки фильтров
+            int maxTransfers = settings.GetInt("Flights_MaxTransfers");
+            string depTime = settings.Get("Flights_DepartureTime");
+            int adults = settings.GetInt("Flights_Adults");
+            int minDays = settings.GetInt("Flights_MinDateDays");
+            int maxDays = settings.GetInt("Flights_MaxDateDays");
+            var specificDates = settings.GetList("Flights_SpecificDates");
+            var includeAirlines = settings.GetList("Flights_IncludeAirlines");
+            var excludeAirlines = settings.GetList("Flights_ExcludeAirlines");
 
-            // Берём самый дешёвый (или рандомный)
-            var bestDeal = deals.OrderBy(d => d.Price).First();
+            // 3. Выбираем дату вылета
+            DateTime? targetDate = null;
 
-                // Получаем красивые названия городов (можно сделать словарь или API, пока заглушка)
-                string originName = GetCityName(origin);       // например "Москва"
-                string destName = GetCityName(bestDeal.Destination); // например "Пхукет"
+            if (specificDates.Any())
+            {
+                // Если указаны конкретные даты или "weekends"/"holidays"
+                var possibleDates = new List<DateTime>();
+                var today = DateTime.Today;
 
-                // Форматируем дату
-                string dateFormatted = "ближайшая";
-                if (!string.IsNullOrEmpty(bestDeal.DepartureDate) && DateTime.TryParse(bestDeal.DepartureDate.Split('T')[0], out DateTime depDate))
+                foreach (var dateStrs in specificDates)
                 {
-                    dateFormatted = depDate.ToString("d MMMM", new System.Globalization.CultureInfo("ru-RU"));
-                    // → "9 февраля"
+                    if (dateStrs == "weekends")
+                    {
+                        for (int d = minDays; d <= maxDays; d++)
+                        {
+                            var dts = today.AddDays(d);
+                            if (dts.DayOfWeek == DayOfWeek.Saturday || dts.DayOfWeek == DayOfWeek.Sunday)
+                                possibleDates.Add(dts);
+                        }
+                    }
+                    else if (dateStrs == "holidays")
+                    {
+                        // Здесь можно добавить список праздников, пока пропустим или добавим вручную
+                        continue;
+                    }
+                    else if (DateTime.TryParse(dateStrs, out DateTime exactDate))
+                    {
+                        if (exactDate >= today.AddDays(minDays) && exactDate <= today.AddDays(maxDays))
+                            possibleDates.Add(exactDate);
+                    }
                 }
 
-                // Цена с пробелами
-                string priceFormatted = bestDeal.Price.ToString("N0", new System.Globalization.CultureInfo("ru-RU")); // → "25 900"
-
-                // Авиакомпания (если пусто — заглушка)
-                string airline = string.IsNullOrEmpty(bestDeal.Airline) ? "Аэрофлот" : bestDeal.Airline;
-                
-                // Формируем текст
-                string postText = $"✈️ Улететь в {destName} из {originName} можно всего за {priceFormatted} рублей ({bestDeal.AffiliateLink}). " +
-                                  $"Прямой перелет с багажом {dateFormatted} от авиакомпании {airline} ✈️\n\n" +
-                                  $"Билеты берем по [ссылке]({bestDeal.AffiliateLink})";
-
-                // Публикация
-                string imageUrl = GetPlaceholderImage();
-
-                await publisher.PublishToChannelAsync(postText, imageUrl);
-
-                _logger.LogInformation("Опубликован one-way билет: {Origin}-{Dest} за {Price}₽", origin, bestDeal.Destination, bestDeal.Price);
-
-            published++;
-
-                    await Task.Delay(2000); // пауза между постами
+                if (possibleDates.Any())
+                {
+                    targetDate = possibleDates[random.Next(possibleDates.Count)];
+                }
             }
-            catch (Exception ex)
+
+            // Если конкретной даты нет — берём случайную в диапазоне
+            if (!targetDate.HasValue)
             {
-                _logger.LogError(ex, "Ошибка при обработке {Origin}-{Dest}", origin, dest);
+                int randomDays = random.Next(minDays, maxDays + 1);
+                targetDate = DateTime.Today.AddDays(randomDays);
             }
 
-            _logger.LogInformation("DealSearchJob завершён. Опубликовано: {Published}", published);
-        }
+            string departureMonth = targetDate.Value.ToString("yyyy-MM");
 
-        private string GetPlaceholderImage()
-        {
-            int rnd = new Random().Next(100, 999);
-            return $"https://picsum.photos/seed/deal{rnd}/800/600";
+            // 4. Запрос к API
+            var deals = await apiService.SearchOneWayPricesForDatesAsync(
+                origin,
+                dest,
+                departureMonth: departureMonth,
+                directOnly: maxTransfers == 0,
+                limit: 10
+            );
+
+            if (deals?.Any() != true)
+            {
+                _logger.LogInformation("Нет предложений для {Origin} → {Dest}", origin, dest);
+                return;
+            }
+
+            // 5. Применяем фильтры
+            var filteredDeals = deals
+                .Where(d =>
+                {
+                    // Пересадки
+                    if (d.Transfers > maxTransfers) return false;
+
+                    // Время вылета
+                    if (depTime != "any")
+                    {
+                        if (!DateTime.TryParse(d.DepartureDate, out var depDt)) return false;
+                        int hour = depDt.Hour;
+
+                        if (depTime == "morning" && (hour < 6 || hour > 11)) return false;
+                        if (depTime == "day" && (hour < 12 || hour > 17)) return false;
+                        if (depTime == "evening" && (hour < 18 || hour > 23) && (hour > 5)) return false;
+                    }
+
+                    // Авиакомпании
+                    if (includeAirlines.Any() && !includeAirlines.Contains(d.Airline ?? "")) return false;
+                    if (excludeAirlines.Contains(d.Airline ?? "")) return false;
+
+                    // Кол-во человек — в запросе уже учтено (adults)
+                    return true;
+                })
+                .OrderBy(d => d.Price)
+                .ToList();
+
+            if (!filteredDeals.Any()) return;
+
+            // 6. Берём лучший (или несколько, если нужно)
+            var best = filteredDeals.First();
+
+            // 7. Формируем пост
+            string priceStr = best.Price.ToString("N0", new System.Globalization.CultureInfo("ru-RU"));
+            string dateStr = DateTime.TryParse(best.DepartureDate, out var dt)
+                ? dt.ToString("d MMMM", new System.Globalization.CultureInfo("ru-RU"))
+                : "ближайшее время";
+
+            string airlineName = GetAirlineName(best.Airline);
+            string fullDest = GetCityName(dest);
+            string fullOrigin = GetCityName(origin);
+            string postText =
+                $"✈️ Улететь в {fullDest} из {fullOrigin} можно всего за <a href=\"{best.AffiliateLink}\"><b>{priceStr} рублей</b></a>. " +
+                $"Перелет с багажом {dateStr} от авиакомпании {airlineName} ✈️\n\n" +
+                $"<a href=\"{best.AffiliateLink}\">Билеты</a>";
+
+            //string imageUrl = GetPlaceholderImage();
+            byte[] imageBytes = ImageHelper.AddTextToLocalImage(
+    text: $"{priceStr} ₽\n{dateStr}",
+    cityName: fullDest // или originName
+);
+
+            if (imageBytes != null)
+            {
+                await publisher.PublishToChannelAsync(postText, Convert.ToBase64String(imageBytes));
+            }
+            else
+            {
+                // Fallback — только текст
+                await publisher.PublishToChannelAsync(postText);
+            }
+
+            // 8. Записываем в историю
+            string hash = $"flight-{origin}-{dest}-{best.DepartureDate}-{best.Price}";
+            settings.AddPublished(hash, "flight");
+
+            _logger.LogInformation("Опубликован рейс: {Origin} → {Dest} за {Price}₽", origin, dest, best.Price);
         }
 
         private string GetCityName(string iataCode)
         {
             var cityMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
+        // Города вылета (Россия)
         { "MOW", "Москвы" },
         { "LED", "Санкт-Петербурга" },
         { "SVX", "Екатеринбурга" },
         { "KZN", "Казани" },
         { "OVB", "Новосибирска" },
+        { "AER", "Сочи" },
+        { "KRR", "Краснодара" },
+        { "ROV", "Ростова-на-Дону" },
+        { "UFA", "Уфы" },
+        { "KJA", "Красноярска" },
+        { "VVO", "Владивостока" },
+        { "PKC", "Петропавловска-Камчатского" },
+        { "SVO", "Москвы" }, // Шереметьево (если по аэропорту)
+        { "DME", "Москвы" },
+        { "VKO", "Москвы" },
+
+        // Популярные направления (прилёта)
         { "BKK", "Бангкок" },
         { "HKT", "Пхукет" },
         { "DXB", "Дубай" },
+        { "SHJ", "Шарджу" },
         { "IST", "Стамбул" },
+        { "AYT", "Анталию" },
         { "DEL", "Дели" },
+        { "GOI", "Гоа" },
         { "TBS", "Тбилиси" },
+        { "TIV", "Тиват" },
+        { "BUD", "Будапешт" },
         { "PAR", "Париж" },
-        // добавляй другие по мере необходимости
+        { "BCN", "Барселону" },
+        { "ROM", "Рим" },
+        { "MIL", "Милан" },
+        { "ATH", "Афины" },
+        { "CAI", "Каир" },
+        { "SSH", "Шарм-эль-Шейх" },
+        { "HRG", "Хургаду" },
+        { "CMB", "Коломбо" },
+        { "MLE", "Мале" },
+        { "MRU", "Маврикий" },
+        { "BAH", "Бахрейн" },
+        { "DOH", "Доху" },
+        { "JED", "Джидду" },
+
+        // Европа и другие
+        { "PRG", "Прагу" },
+        { "VIE", "Вену" },
+        { "BER", "Берлин" },
+        { "AMS", "Амстердам" },
+        { "LON", "Лондон" },
+        { "MAD", "Мадрид" },
+        { "LIS", "Лиссабон" },
+        { "ZRH", "Цюрих" },
+        { "GVA", "Женеву" },
+        { "OSL", "Осло" },
+        { "HEL", "Хельсинки" },
+
+        // Азия и дальние
+        { "BALI", "Бали" }, // не IATA, но часто ищут как BPN/DPS
+        { "DPS", "Денпасар (Бали)" },
+        { "CNX", "Чиангмай" },
+        { "KTM", "Катманду" },
+        { "HAN", "Ханой" },
+        { "SGN", "Хошимин" },
+        { "PNH", "Пномпень" },
+        { "RGN", "Янгон" }
     };
 
             return cityMap.TryGetValue(iataCode, out var name) ? name : iataCode;
+        }
+
+        private string GetAirlineName(string? airlineCode)
+        {
+            if (string.IsNullOrEmpty(airlineCode))
+                return "надёжный перевозчик";
+
+            var airlineMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        { "SU", "Аэрофлот" },
+        { "S7", "S7 Airlines" },
+        { "DP", "Победа" },
+        { "FV", "Россия" },
+        { "N4", "Nordwind" },
+        { "UT", "ЮТэйр" },
+        { "WZ", "Red Wings" },
+        { "ZF", "Azur Air" },
+        { "RL", "Royal Flight" },
+        { "EO", "Pegas Fly" },
+        { "U6", "Уральские авиалинии" },
+        { "HY", "Uzbekistan Airways" },
+        { "KC", "Air Astana" },
+        { "TK", "Turkish Airlines" },
+        { "EK", "Emirates" },
+        { "QR", "Qatar Airways" },
+        { "EY", "Etihad Airways" },
+        { "GF", "Gulf Air" },
+        { "WY", "Oman Air" },
+        { "KU", "Kuwait Airways" },
+        { "J9", "Jazeera Airways" },
+        { "W5", "Mahann Air" },
+        { "IR", "Iran Air" },
+        { "6E", "IndiGo" },
+        { "AI", "Air India" },
+        { "UK", "Vistara" },
+        { "TG", "Thai Airways" },
+        { "PG", "Bangkok Airways" },
+        { "DD", "Nok Air" },
+        { "FD", "AirAsia" },
+        { "AK", "AirAsia" },
+        { "KE", "Korean Air" },
+        { "OZ", "Asiana Airlines" },
+        { "JL", "Japan Airlines" },
+        { "NH", "All Nippon Airways" },
+        { "SQ", "Singapore Airlines" },
+        { "QF", "Qantas" },
+        { "BA", "British Airways" },
+        { "LH", "Lufthansa" },
+        { "AF", "Air France" },
+        { "KL", "KLM" },
+        { "AY", "Finnair" },
+        { "SK", "SAS" },
+        { "OS", "Austrian Airlines" },
+        { "LX", "Swiss" },
+        { "BT", "airBaltic" },
+        { "LO", "LOT Polish Airlines" },
+        { "FR", "Ryanair" },
+        { "U2", "easyJet" },
+        { "VY", "Vueling" },
+        { "IB", "Iberia" },
+        { "TP", "TAP Air Portugal" },
+        { "EI", "Aer Lingus" },
+        { "2S", "Southwind Airlines"}
+    };
+
+            return airlineMap.TryGetValue(airlineCode, out var name) ? name : airlineCode;
         }
     }
 }

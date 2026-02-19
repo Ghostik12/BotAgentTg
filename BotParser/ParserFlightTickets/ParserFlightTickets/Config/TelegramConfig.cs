@@ -8,6 +8,5 @@ namespace ParserFlightTickets.Config
     {
         public string Token { get; set; } = string.Empty;
         public long ChannelId { get; set; }
-        public long AdminUserId { get; set; }
     }
 }

@@ -8,6 +8,5 @@ namespace ParserFlightTickets.Config
     {
         public TelegramConfig Telegram { get; set; } = new();
         public TravelPayoutsConfig TravelPayouts { get; set; } = new();
-        public SearchSettingsConfig SearchSettings { get; set; } = new();
     }
 }
